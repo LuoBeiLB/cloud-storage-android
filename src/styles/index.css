@@ -247,8 +247,15 @@ a { color: var(--cs-primary); text-decoration: none; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
+/* 表格卡片横向滚动容器 */
+.table-card { overflow-x: auto; }
 /* 移动端全局辅助规则 */
 @media (max-width: 768px) {
   .cs-page { padding: 16px; }
   .breadcrumb-bar { margin-bottom: 16px; }
+  .el-dialog { width: 92vw !important; max-width: 92vw; margin-top: 8vh !important; }
+  .el-dialog__body { padding: 16px; }
+  .el-message-box { width: 88vw !important; max-width: 88vw; }
+  .el-pagination { flex-wrap: wrap; justify-content: center; row-gap: 8px; }
+  .el-pagination .el-pagination__sizes { display: none; }
 }

@@ -1,24 +1,34 @@
 <template>
   <div class="layout-admin">
-    <aside class="sidebar" :class="{ collapsed: appStore.sidebarCollapsed }">
+    <aside class="sidebar" :class="{ collapsed: isCollapsed, 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-header">
         <div class="logo-badge"><el-icon :size="20" color="#fff"><Coin /></el-icon></div>
-        <span v-show="!appStore.sidebarCollapsed" class="sidebar-title">CloudVault</span>
-        <el-tag v-show="!appStore.sidebarCollapsed" size="small" type="danger" effect="dark">管理端</el-tag>
+        <span v-show="!isCollapsed" class="sidebar-title">CloudVault</span>
+        <el-tag v-show="!isCollapsed" size="small" type="danger" effect="dark">管理端</el-tag>
       </div>
-      <el-menu :default-active="route.path" :collapse="appStore.sidebarCollapsed" router class="sidebar-menu">
+      <el-menu :default-active="route.path" :collapse="isCollapsed" router class="sidebar-menu" @select="handleMenuNavigate">
         <el-menu-item index="/admin/dashboard"><el-icon><DataAnalysis /></el-icon><template #title>统计大盘</template></el-menu-item>
         <el-menu-item index="/admin/users"><el-icon><UserFilled /></el-icon><template #title>用户管理</template></el-menu-item>
         <el-menu-item index="/admin/logs"><el-icon><Document /></el-icon><template #title>审计日志</template></el-menu-item>
       </el-menu>
       <div class="sidebar-bottom">
-        <el-button text @click="router.push('/')" class="back-btn"><el-icon><Back /></el-icon><span v-show="!appStore.sidebarCollapsed">返回用户端</span></el-button>
+        <el-button text @click="router.push('/')" class="back-btn"><el-icon><Back /></el-icon><span v-show="!isCollapsed">返回用户端</span></el-button>
       </div>
     </aside>
+    <div v-if="isMobile && mobileMenuOpen" class="mobile-mask" @click="closeMobileMenu"></div>
     <div class="layout-main">
       <header class="header">
         <div class="header-left">
-          <el-icon class="collapse-btn" @click="appStore.toggleSidebar" :size="20"><Fold v-if="!appStore.sidebarCollapsed" /><Expand v-else /></el-icon>
+          <el-icon class="collapse-btn" @click="handleMenuClick" :size="20">
+            <template v-if="isMobile">
+              <Close v-if="mobileMenuOpen" />
+              <Menu v-else />
+            </template>
+            <template v-else>
+              <Fold v-if="!isCollapsed" />
+              <Expand v-else />
+            </template>
+          </el-icon>
         </div>
         <div class="header-right">
           <button class="theme-toggle" @click="appStore.toggleTheme" :title="appStore.theme === 'light' ? '切换暗色' : '切换亮色'">
@@ -48,6 +58,7 @@
 </template>
 
 <script setup>
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
@@ -57,6 +68,44 @@ const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
 
+const isMobile = ref(false)
+const mobileMenuOpen = ref(false)
+
+// 移动端抽屉里菜单始终展开；桌面/平板的折叠状态由 appStore 控制
+const isCollapsed = computed(() => !isMobile.value && appStore.sidebarCollapsed)
+
+function updateViewport() {
+  isMobile.value = window.innerWidth <= 768
+  if (!isMobile.value) mobileMenuOpen.value = false
+}
+
+onMounted(() => {
+  updateViewport()
+  // 平板端（≤1024 且 >768）默认折叠侧边栏
+  if (window.innerWidth <= 1024 && window.innerWidth > 768) {
+    appStore.sidebarCollapsed = true
+  }
+  window.addEventListener('resize', updateViewport)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateViewport)
+})
+
+function handleMenuClick() {
+  if (isMobile.value) {
+    mobileMenuOpen.value = !mobileMenuOpen.value
+  } else {
+    appStore.toggleSidebar()
+  }
+}
+
+function handleMenuNavigate() {
+  if (isMobile.value) mobileMenuOpen.value = false
+}
+
+function closeMobileMenu() { mobileMenuOpen.value = false }
+
 function handleLogout() { userStore.logout(); router.push('/login') }
 </script>
 
@@ -65,6 +114,7 @@ function handleLogout() { userStore.logout(); router.push('/login') }
 .sidebar { width: var(--cs-sidebar-width); height: 100vh; background: var(--cs-sidebar-bg); border-right: 1px solid var(--cs-border); display: flex; flex-direction: column; transition: width var(--cs-transition); flex-shrink: 0; overflow: hidden; }
 .sidebar.collapsed { width: 64px; }
 .sidebar-header { height: var(--cs-header-height); display: flex; align-items: center; padding: 0 16px; gap: 10px; border-bottom: 1px solid var(--cs-border); flex-shrink: 0; }
+.sidebar.collapsed .sidebar-header { justify-content: center; padding: 0; }
 .sidebar-title { font-size: 16px; font-weight: 700; color: var(--cs-text-primary); white-space: nowrap; letter-spacing: -0.3px; }
 .logo-badge { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--cs-primary) 0%, var(--cs-primary-dark) 100%); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--cs-primary-shadow); }
 .sidebar-menu { flex: 1; border-right: none !important; padding: 8px; background: transparent !important; }
@@ -87,4 +137,33 @@ function handleLogout() { userStore.logout(); router.push('/login') }
 .admin-avatar { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
 .user-name { font-size: 14px; color: var(--cs-text-primary); font-weight: 500; }
 .content { flex: 1; overflow-y: auto; background: var(--cs-bg-page); }
+.mobile-mask { display: none; }
+
+/* 平板端：侧边栏折叠成图标栏 */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .header { padding: 0 16px; }
+}
+
+/* 移动端：侧边栏变抽屉，默认隐藏 */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: var(--cs-sidebar-width) !important;
+    transform: translateX(-100%);
+    transition: transform var(--cs-transition);
+    z-index: 1001;
+    box-shadow: var(--cs-shadow-lg);
+  }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .mobile-mask {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 1000;
+  }
+  .header { padding: 0 12px; }
+  .header-right { gap: 8px; }
+  .user-name { display: none; }
+}
 </style>

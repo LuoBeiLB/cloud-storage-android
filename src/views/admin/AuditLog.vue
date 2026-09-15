@@ -23,8 +23,8 @@
         <el-button @click="handleReset"><el-icon><Refresh /></el-icon>重置</el-button>
       </div>
     </div>
-    <div class="cs-card">
-      <el-table :data="pagedLogs" style="width: 100%">
+    <div class="cs-card table-card">
+      <el-table :data="pagedLogs" style="width: 100%; min-width: 900px">
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="expand-detail">
@@ -105,8 +105,17 @@ function formatDate(iso) { const d = new Date(iso); return d.toLocaleDateString(
 
 <style scoped>
 .page-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--cs-text-primary); margin: 0 0 24px 0; }
-.filter-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .expand-detail { padding: 16px 24px; }
 .expand-detail h4 { font-size: 14px; font-weight: 600; color: var(--cs-text-primary); margin: 0 0 12px 0; }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; }
+.table-card { overflow-x: auto; }
+.filter-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.filter-row .el-input, .filter-row .el-select, .filter-row .el-date-editor { flex-shrink: 0; }
+@media (max-width: 768px) {
+  .filter-row .el-input, .filter-row .el-select, .filter-row .el-date-editor { width: 100% !important; flex: 1 1 100%; }
+  .filter-row .el-button { flex: 1 1 calc(50% - 8px); margin-left: 0; }
+  .filter-row .el-button + .el-button { margin-left: 0; }
+  .expand-detail { padding: 12px 16px; }
+  .pagination-bar { justify-content: center; }
+}
 </style>

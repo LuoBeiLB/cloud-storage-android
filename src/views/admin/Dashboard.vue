@@ -101,4 +101,16 @@ watch(() => appStore.theme, () => { refreshCharts() })
 .chart-title { font-size: 15px; font-weight: 600; color: var(--cs-text-primary); margin: 0 0 16px 0; }
 .chart-container { height: 320px; }
 @media (max-width: 1200px) { .stats-row { grid-template-columns: repeat(2, 1fr); } .charts-row { grid-template-columns: 1fr; } }
+@media (max-width: 768px) {
+  .stats-row { gap: 10px; margin-bottom: 16px; }
+  .stat-card { padding: 14px; }
+  .stat-card-content { gap: 10px; }
+  .stat-icon { width: 40px; height: 40px; border-radius: 10px; }
+  .stat-icon .el-icon { font-size: 20px; }
+  .stat-value { font-size: 17px; }
+  .stat-label { font-size: 12px; }
+  .chart-card { padding: 14px; }
+  .chart-title { margin-bottom: 12px; }
+  .chart-container { height: 240px; }
+}
 </style>

@@ -13,8 +13,8 @@
       </div>
       <div class="toolbar-right"><el-tag>共 {{ filteredUsers.length }} 位用户</el-tag></div>
     </div>
-    <div class="cs-card">
-      <el-table :data="filteredUsers" style="width: 100%">
+    <div class="cs-card table-card">
+      <el-table :data="filteredUsers" style="width: 100%; min-width: 1160px">
         <el-table-column prop="username" label="用户名" width="140" />
         <el-table-column prop="nickname" label="昵称" width="120" />
         <el-table-column prop="email" label="邮箱" min-width="200" />
@@ -34,16 +34,16 @@
         </el-table-column>
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small"><el-icon><Edit /></el-icon>编辑</el-button>
+            <div class="op-actions"><el-button link type="primary" size="small"><el-icon><Edit /></el-icon>编辑</el-button>
             <el-button link :type="row.status === 'disabled' ? 'success' : 'warning'" size="small" @click="handleToggleStatus(row)">
               <el-icon><component :is="row.status === 'disabled' ? 'CircleCheck' : 'CircleClose'" /></el-icon>{{ row.status === 'disabled' ? '启用' : '禁用' }}
             </el-button>
-            <el-button link type="info" size="small"><el-icon><Key /></el-icon>重置密码</el-button>
+            <el-button link type="info" size="small"><el-icon><Key /></el-icon>重置密码</el-button></div>
           </template>
         </el-table-column>
       </el-table>
     </div>
-    <el-dialog v-model="showCreateDialog" title="创建用户" width="480px" destroy-on-close>
+    <el-dialog v-model="showCreateDialog" title="创建用户" width="min(480px, 92vw)" destroy-on-close>
       <el-form :model="createForm" label-width="80px">
         <el-form-item label="用户名" required><el-input v-model="createForm.username" placeholder="请输入用户名" /></el-form-item>
         <el-form-item label="初始密码">
@@ -104,4 +104,18 @@ function formatDate(iso) { const d=new Date(iso); return d.toLocaleDateString('z
 .page-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--cs-text-primary); margin: 0; }
 .quota-cell { display: flex; flex-direction: column; gap: 4px; }
 .quota-text { font-size: 12px; color: var(--cs-text-tertiary); }
+.table-card { overflow-x: auto; }
+.op-actions { display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.op-actions .el-button { margin-left: 0; }
+.op-actions .el-button + .el-button { margin-left: 0; }
+.op-actions .el-button .el-icon + span { margin-left: 4px; }
+.toolbar-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; }
+@media (max-width: 768px) {
+  .breadcrumb-bar { flex-wrap: wrap; gap: 12px; }
+  .toolbar { gap: 10px; }
+  .toolbar-left { flex: 1 1 100%; }
+  .toolbar-left .el-input, .toolbar-left .el-select { width: 100% !important; }
+  .pagination-bar { justify-content: center; }
+}
 </style>
