@@ -4,8 +4,8 @@
       <h2 class="page-title"><el-icon><Delete /></el-icon>回收站</h2>
       <el-tag type="info">30 天后自动清理</el-tag>
     </div>
-    <div class="cs-card">
-      <el-table :data="recycleFiles" style="width: 100%">
+    <div class="cs-card table-card">
+      <el-table :data="recycleFiles" style="width: 100%; min-width: 720px">
         <el-table-column prop="name" label="文件名" min-width="280">
           <template #default="{ row }">
             <div class="file-name-cell"><el-icon :size="18" :color="getFileIconColor(row)"><component :is="getFileIcon(row)" /></el-icon><span>{{ row.name }}</span></div>
@@ -55,4 +55,9 @@ function formatDate(iso) { const d=new Date(iso); return d.toLocaleDateString('z
 .file-name-cell { display: flex; align-items: center; gap: 8px; }
 .expire-text { color: var(--cs-warning); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; }
+.table-card { overflow-x: auto; }
+@media (max-width: 768px) {
+  .breadcrumb-bar { flex-wrap: wrap; gap: 8px; }
+  .pagination-bar { justify-content: center; }
+}
 </style>
