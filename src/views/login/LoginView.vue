@@ -131,4 +131,13 @@ async function handleLogin() {
   .brand-features, .brand-footer { display: none; }
   .login-form-wrapper { padding: 32px 24px; }
 }
+@media (max-width: 480px) {
+  .login-container { width: 94%; }
+  .login-brand { padding: 24px 20px; }
+  .brand-icon { width: 56px; height: 56px; margin-bottom: 12px; }
+  .brand-title { font-size: 22px; }
+  .brand-desc { font-size: 13px; margin-bottom: 0; }
+  .login-form-wrapper { padding: 24px 20px; }
+  .portal-switch { margin-bottom: 20px; }
+}
 </style>
