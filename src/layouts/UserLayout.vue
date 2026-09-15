@@ -1,17 +1,17 @@
 <template>
   <div class="layout-user">
-    <aside class="sidebar" :class="{ collapsed: appStore.sidebarCollapsed }">
+    <aside class="sidebar" :class="{ collapsed: isCollapsed, 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-header">
         <el-icon :size="28" color="var(--cs-primary)"><Coin /></el-icon>
-        <span v-show="!appStore.sidebarCollapsed" class="sidebar-title">CloudVault</span>
+        <span v-show="!isCollapsed" class="sidebar-title">CloudVault</span>
       </div>
-      <el-menu :default-active="route.path" :collapse="appStore.sidebarCollapsed" router class="sidebar-menu">
+      <el-menu :default-active="route.path" :collapse="isCollapsed" router class="sidebar-menu" @select="handleMenuNavigate">
         <el-menu-item index="/files"><el-icon><FolderOpened /></el-icon><template #title>我的文件</template></el-menu-item>
         <el-menu-item index="/recycle"><el-icon><Delete /></el-icon><template #title>回收站</template></el-menu-item>
         <el-menu-item index="/profile"><el-icon><User /></el-icon><template #title>个人中心</template></el-menu-item>
       </el-menu>
       <div class="sidebar-bottom">
-        <div class="quota-info" v-show="!appStore.sidebarCollapsed">
+        <div class="quota-info" v-show="!isCollapsed">
           <div class="quota-label">
             <span>存储空间</span>
             <span class="quota-value">{{ formatSize(userStore.quota.used) }} / {{ formatSize(userStore.quota.total) }}</span>
@@ -20,11 +20,19 @@
         </div>
       </div>
     </aside>
+    <div v-if="isMobile && mobileMenuOpen" class="mobile-mask" @click="closeMobileMenu"></div>
     <div class="layout-main">
       <header class="header">
         <div class="header-left">
-          <el-icon class="collapse-btn" @click="appStore.toggleSidebar" :size="20">
-            <Fold v-if="!appStore.sidebarCollapsed" /><Expand v-else />
+          <el-icon class="collapse-btn" @click="handleMenuClick" :size="20">
+            <template v-if="isMobile">
+              <Close v-if="mobileMenuOpen" />
+              <Menu v-else />
+            </template>
+            <template v-else>
+              <Fold v-if="!isCollapsed" />
+              <Expand v-else />
+            </template>
           </el-icon>
         </div>
         <div class="header-right">
@@ -56,7 +64,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
@@ -66,7 +74,44 @@ const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
 
+const isMobile = ref(false)
+const mobileMenuOpen = ref(false)
+
+// 移动端抽屉里菜单始终展开；桌面/平板的折叠状态由 appStore 控制
+const isCollapsed = computed(() => !isMobile.value && appStore.sidebarCollapsed)
 const quotaPercent = computed(() => Math.round(userStore.quota.used / userStore.quota.total * 100))
+
+function updateViewport() {
+  isMobile.value = window.innerWidth <= 768
+  if (!isMobile.value) mobileMenuOpen.value = false
+}
+
+onMounted(() => {
+  updateViewport()
+  // 平板端（≤1024 且 >768）默认折叠侧边栏
+  if (window.innerWidth <= 1024 && window.innerWidth > 768) {
+    appStore.sidebarCollapsed = true
+  }
+  window.addEventListener('resize', updateViewport)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateViewport)
+})
+
+function handleMenuClick() {
+  if (isMobile.value) {
+    mobileMenuOpen.value = !mobileMenuOpen.value
+  } else {
+    appStore.toggleSidebar()
+  }
+}
+
+function handleMenuNavigate() {
+  if (isMobile.value) mobileMenuOpen.value = false
+}
+
+function closeMobileMenu() { mobileMenuOpen.value = false }
 
 function formatSize(bytes) {
   if (bytes === 0) return '0 B'
@@ -101,4 +146,33 @@ function handleLogout() { userStore.logout(); router.push('/login') }
 .user-avatar { background: var(--cs-primary-lighter); color: var(--cs-primary); }
 .user-name { font-size: 14px; color: var(--cs-text-primary); font-weight: 500; }
 .content { flex: 1; overflow-y: auto; background: var(--cs-bg-page); }
+.mobile-mask { display: none; }
+
+/* 平板端：侧边栏折叠成图标栏 */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .header { padding: 0 16px; }
+}
+
+/* 移动端：侧边栏变抽屉，默认隐藏 */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: var(--cs-sidebar-width) !important;
+    transform: translateX(-100%);
+    transition: transform var(--cs-transition);
+    z-index: 1001;
+    box-shadow: var(--cs-shadow-lg);
+  }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .mobile-mask {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 1000;
+  }
+  .header { padding: 0 12px; }
+  .header-right { gap: 8px; }
+  .user-name { display: none; }
+}
 </style>

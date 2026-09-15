@@ -66,4 +66,10 @@ function handleChangePassword() { if (pwdForm.value.newPassword !== pwdForm.valu
 .quota-stat-item { display: flex; align-items: center; gap: 12px; }
 .stat-num { font-size: 20px; font-weight: 600; color: var(--cs-text-primary); }
 .stat-label { font-size: 12px; color: var(--cs-text-tertiary); }
+@media (max-width: 768px) {
+  .profile-grid { grid-template-columns: 1fr; gap: 16px; }
+  .quota-stats { gap: 16px; flex-wrap: wrap; }
+  .quota-card, .password-card, .info-card { padding: 16px; }
+  .quota-stat-item { gap: 8px; }
+}
 </style>

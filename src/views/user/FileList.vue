@@ -14,7 +14,7 @@
     </div>
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-input v-model="searchText" placeholder="搜索文件..." :prefix-icon="Search" clearable style="width: 240px" />
+        <el-input v-model="searchText" placeholder="搜索文件..." :prefix-icon="Search" clearable class="search-input" />
       </div>
       <div class="toolbar-right">
         <el-select v-model="sortBy" style="width: 140px">
@@ -27,7 +27,7 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table :data="filteredFiles" style="width: 100%" :default-sort="{ prop: 'updatedAt', order: 'descending' }">
+      <el-table :data="filteredFiles" style="width: 100%; min-width: 720px" :default-sort="{ prop: 'updatedAt', order: 'descending' }">
         <el-table-column prop="name" label="文件名" min-width="300" sortable>
           <template #default="{ row }">
             <div class="file-name-cell" @dblclick="handleOpen(row)">
@@ -63,7 +63,7 @@
     <div class="pagination-bar">
       <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]" :total="filteredFiles.length" layout="total, sizes, prev, pager, next" background />
     </div>
-    <el-dialog v-model="showUploadDialog" title="上传文件" width="520px" destroy-on-close>
+    <el-dialog v-model="showUploadDialog" title="上传文件" width="min(520px, 92vw)" destroy-on-close>
       <el-upload drag multiple action="#" :auto-upload="false">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
 import { ElMessage } from 'element-plus'
@@ -86,6 +86,11 @@ const viewMode = ref('table')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const showUploadDialog = ref(false)
+
+onMounted(() => {
+  // 移动端默认用网格视图，更适配小屏
+  if (window.innerWidth <= 768) viewMode.value = 'grid'
+})
 
 const breadcrumbs = computed(() => {
   const parts = fileStore.currentPath.split('/').filter(Boolean)
@@ -127,7 +132,7 @@ function formatDate(iso) {
 <style scoped>
 .file-name-cell { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .file-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-table { overflow: hidden; }
+.file-table { overflow-x: auto; }
 .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
 .file-grid-item { padding: 20px 16px 16px; text-align: center; cursor: pointer; transition: all var(--cs-transition); }
 .file-grid-item:hover { transform: translateY(-2px); box-shadow: var(--cs-shadow); }
@@ -136,4 +141,15 @@ function formatDate(iso) {
 .grid-meta { font-size: 12px; color: var(--cs-text-tertiary); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; padding: 12px 0; }
 .upload-icon { color: var(--cs-primary); margin-bottom: 8px; }
+.search-input { width: 240px; }
+@media (max-width: 768px) {
+  .breadcrumb-bar { flex-wrap: wrap; gap: 12px; }
+  .breadcrumb-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .breadcrumb-actions .el-button { margin-left: 0; }
+  .toolbar-left { flex: 1; min-width: 0; }
+  .search-input { width: 100%; }
+  .toolbar-right { width: 100%; display: flex; justify-content: space-between; }
+  .file-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+  .pagination-bar { justify-content: center; }
+}
 </style>

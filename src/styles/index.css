@@ -98,3 +98,9 @@ a { color:var(--cs-primary); text-decoration:none; }
 .theme-toggle:hover { background:var(--cs-bg-hover); color:var(--cs-primary); }
 .breadcrumb-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
 .toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
+
+/* 移动端全局辅助规则 */
+@media (max-width: 768px) {
+  .cs-page { padding: 16px; }
+  .breadcrumb-bar { margin-bottom: 16px; }
+}
