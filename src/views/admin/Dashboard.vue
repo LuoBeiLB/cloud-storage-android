@@ -88,7 +88,9 @@ watch(() => appStore.theme, () => { refreshCharts() })
 <style scoped>
 .page-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--cs-text-primary); margin: 0 0 24px 0; }
 .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-.stat-card { border-radius: var(--cs-radius-lg); padding: 20px; color: #fff; position: relative; overflow: hidden; }
+.stat-card { border-radius: var(--cs-radius-lg); padding: 20px; color: #fff; position: relative; overflow: hidden; transition: transform 0.25s ease, box-shadow 0.25s ease; }
+.stat-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+.chart-card { transition: box-shadow 0.25s ease; }
 .stat-card::after { content: ''; position: absolute; top: -20px; right: -20px; width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.1); }
 .stat-card-content { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; }
 .stat-icon { width: 48px; height: 48px; background: rgba(255,255,255,0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }

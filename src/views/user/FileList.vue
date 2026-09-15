@@ -126,11 +126,12 @@ function formatDate(iso) {
 
 <style scoped>
 .file-name-cell { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-.file-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-name-cell:hover .file-name-text { color: var(--cs-primary); }
+.file-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 0.2s ease; }
 .file-table { overflow: hidden; }
 .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
-.file-grid-item { padding: 20px 16px 16px; text-align: center; cursor: pointer; transition: all var(--cs-transition); }
-.file-grid-item:hover { transform: translateY(-2px); box-shadow: var(--cs-shadow); }
+.file-grid-item { padding: 24px 16px 18px; text-align: center; cursor: pointer; transition: all 0.25s ease; }
+.file-grid-item:hover { transform: translateY(-4px); box-shadow: var(--cs-shadow-lg); border-color: var(--cs-primary-light); }
 .grid-icon { margin-bottom: 12px; }
 .grid-name { font-size: 13px; color: var(--cs-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
 .grid-meta { font-size: 12px; color: var(--cs-text-tertiary); }

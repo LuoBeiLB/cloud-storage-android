@@ -2,7 +2,7 @@
   <div class="layout-user">
     <aside class="sidebar" :class="{ collapsed: appStore.sidebarCollapsed }">
       <div class="sidebar-header">
-        <el-icon :size="28" color="var(--cs-primary)"><Coin /></el-icon>
+        <div class="logo-badge"><el-icon :size="20" color="#fff"><Coin /></el-icon></div>
         <span v-show="!appStore.sidebarCollapsed" class="sidebar-title">CloudVault</span>
       </div>
       <el-menu :default-active="route.path" :collapse="appStore.sidebarCollapsed" router class="sidebar-menu">
@@ -83,10 +83,13 @@ function handleLogout() { userStore.logout(); router.push('/login') }
 .sidebar { width: var(--cs-sidebar-width); height: 100vh; background: var(--cs-sidebar-bg); border-right: 1px solid var(--cs-border); display: flex; flex-direction: column; transition: width var(--cs-transition); flex-shrink: 0; overflow: hidden; }
 .sidebar.collapsed { width: 64px; }
 .sidebar-header { height: var(--cs-header-height); display: flex; align-items: center; padding: 0 16px; gap: 10px; border-bottom: 1px solid var(--cs-border); flex-shrink: 0; }
-.sidebar-title { font-size: 16px; font-weight: 600; color: var(--cs-text-primary); white-space: nowrap; }
+.sidebar-title { font-size: 16px; font-weight: 700; color: var(--cs-text-primary); white-space: nowrap; letter-spacing: -0.3px; }
+.logo-badge { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--cs-primary) 0%, var(--cs-primary-dark) 100%); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--cs-primary-shadow); }
 .sidebar-menu { flex: 1; border-right: none !important; padding: 8px; background: transparent !important; }
-.sidebar-menu .el-menu-item { border-radius: var(--cs-radius-sm); margin-bottom: 2px; height: 44px; line-height: 44px; }
-.sidebar-menu .el-menu-item.is-active { background: var(--cs-sidebar-active-bg); color: var(--cs-sidebar-active-text); }
+.sidebar-menu .el-menu-item { position: relative; border-radius: var(--cs-radius); margin-bottom: 4px; height: 44px; line-height: 44px; transition: all 0.2s ease; }
+.sidebar-menu .el-menu-item:hover { background: var(--cs-bg-hover); color: var(--cs-primary); }
+.sidebar-menu .el-menu-item.is-active { background: var(--cs-sidebar-active-bg); color: var(--cs-sidebar-active-text); font-weight: 600; }
+.sidebar-menu .el-menu-item.is-active::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 18px; border-radius: 2px; background: var(--cs-primary); }
 .sidebar-bottom { padding: 12px 16px; border-top: 1px solid var(--cs-border); flex-shrink: 0; }
 .quota-info .quota-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--cs-text-secondary); margin-bottom: 6px; }
 .quota-value { color: var(--cs-text-primary); font-weight: 500; }
