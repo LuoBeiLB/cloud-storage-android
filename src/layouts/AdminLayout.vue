@@ -1,0 +1,87 @@
+<template>
+  <div class="layout-admin">
+    <aside class="sidebar" :class="{ collapsed: appStore.sidebarCollapsed }">
+      <div class="sidebar-header">
+        <el-icon :size="28" color="var(--cs-primary)"><Coin /></el-icon>
+        <span v-show="!appStore.sidebarCollapsed" class="sidebar-title">CloudVault</span>
+        <el-tag v-show="!appStore.sidebarCollapsed" size="small" type="danger">管理端</el-tag>
+      </div>
+      <el-menu :default-active="route.path" :collapse="appStore.sidebarCollapsed" router class="sidebar-menu">
+        <el-menu-item index="/admin/dashboard"><el-icon><DataAnalysis /></el-icon><template #title>统计大盘</template></el-menu-item>
+        <el-menu-item index="/admin/users"><el-icon><UserFilled /></el-icon><template #title>用户管理</template></el-menu-item>
+        <el-menu-item index="/admin/logs"><el-icon><Document /></el-icon><template #title>审计日志</template></el-menu-item>
+      </el-menu>
+      <div class="sidebar-bottom">
+        <el-button text @click="router.push('/')" class="back-btn"><el-icon><Back /></el-icon><span v-show="!appStore.sidebarCollapsed">返回用户端</span></el-button>
+      </div>
+    </aside>
+    <div class="layout-main">
+      <header class="header">
+        <div class="header-left">
+          <el-icon class="collapse-btn" @click="appStore.toggleSidebar" :size="20"><Fold v-if="!appStore.sidebarCollapsed" /><Expand v-else /></el-icon>
+        </div>
+        <div class="header-right">
+          <button class="theme-toggle" @click="appStore.toggleTheme" :title="appStore.theme === 'light' ? '切换暗色' : '切换亮色'">
+            <el-icon :size="18"><Moon v-if="appStore.theme === 'light'" /><Sunny v-else /></el-icon>
+          </button>
+          <el-dropdown trigger="click">
+            <span class="user-info">
+              <el-avatar :size="32" class="user-avatar admin-avatar"><el-icon :size="18"><User /></el-icon></el-avatar>
+              <span class="user-name">{{ userStore.username }}</span>
+              <el-icon :size="12"><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="handleLogout"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </header>
+      <main class="content">
+        <router-view v-slot="{ Component }">
+          <transition name="fade" mode="out-in"><component :is="Component" /></transition>
+        </router-view>
+      </main>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { useRoute, useRouter } from 'vue-router'
+import { useAppStore } from '@/stores/app'
+import { useUserStore } from '@/stores/user'
+
+const route = useRoute()
+const router = useRouter()
+const appStore = useAppStore()
+const userStore = useUserStore()
+
+function handleLogout() { userStore.logout(); router.push('/login') }
+</script>
+
+<style scoped>
+.layout-admin { display: flex; height: 100vh; overflow: hidden; }
+.sidebar { width: var(--cs-sidebar-width); height: 100vh; background: var(--cs-sidebar-bg); border-right: 1px solid var(--cs-border); display: flex; flex-direction: column; transition: width var(--cs-transition); flex-shrink: 0; overflow: hidden; }
+.sidebar.collapsed { width: 64px; }
+.sidebar-header { height: var(--cs-header-height); display: flex; align-items: center; padding: 0 16px; gap: 10px; border-bottom: 1px solid var(--cs-border); flex-shrink: 0; }
+.sidebar-title { font-size: 16px; font-weight: 600; color: var(--cs-text-primary); white-space: nowrap; }
+.sidebar-menu { flex: 1; border-right: none !important; padding: 8px; background: transparent !important; }
+.sidebar-menu .el-menu-item { border-radius: var(--cs-radius-sm); margin-bottom: 2px; height: 44px; line-height: 44px; }
+.sidebar-menu .el-menu-item.is-active { background: var(--cs-sidebar-active-bg); color: var(--cs-sidebar-active-text); }
+.sidebar-bottom { padding: 12px 16px; border-top: 1px solid var(--cs-border); flex-shrink: 0; }
+.back-btn { width: 100%; justify-content: flex-start; color: var(--cs-text-secondary) !important; }
+.back-btn:hover { color: var(--cs-primary) !important; }
+.layout-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.header { height: var(--cs-header-height); background: var(--cs-header-bg); border-bottom: 1px solid var(--cs-header-border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; flex-shrink: 0; }
+.header-left { display: flex; align-items: center; }
+.collapse-btn { cursor: pointer; color: var(--cs-text-secondary); transition: color var(--cs-transition); }
+.collapse-btn:hover { color: var(--cs-primary); }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.user-info { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 8px; border-radius: var(--cs-radius-sm); transition: background var(--cs-transition); }
+.user-info:hover { background: var(--cs-bg-hover); }
+.user-avatar { background: var(--cs-primary-lighter); color: var(--cs-primary); }
+.admin-avatar { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+.user-name { font-size: 14px; color: var(--cs-text-primary); font-weight: 500; }
+.content { flex: 1; overflow-y: auto; background: var(--cs-bg-page); }
+</style>

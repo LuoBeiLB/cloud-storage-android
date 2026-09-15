@@ -1,0 +1,22 @@
+export const mockFiles = [
+  { id: 1, name: '项目文档', type: 'folder', size: 0, updatedAt: '2026-09-14T10:30:00Z', path: '/项目文档/' },
+  { id: 2, name: '设计素材', type: 'folder', size: 0, updatedAt: '2026-09-13T15:20:00Z', path: '/设计素材/' },
+  { id: 3, name: '季度报告', type: 'folder', size: 0, updatedAt: '2026-09-12T09:00:00Z', path: '/季度报告/' },
+  { id: 4, name: '产品需求文档 v2.3.pdf', type: 'pdf', size: 15728640, updatedAt: '2026-09-14T14:22:00Z' },
+  { id: 5, name: '系统架构设计.png', type: 'image', size: 4194304, updatedAt: '2026-09-13T11:15:00Z' },
+  { id: 6, name: '用户手册.docx', type: 'word', size: 2097152, updatedAt: '2026-09-12T16:40:00Z' },
+  { id: 7, name: '数据备份_20260915.tar.gz', type: 'archive', size: 524288000, updatedAt: '2026-09-15T03:00:00Z' },
+  { id: 8, name: '会议纪要.txt', type: 'text', size: 8192, updatedAt: '2026-09-14T17:30:00Z' },
+  { id: 9, name: '演示视频.mp4', type: 'video', size: 1073741824, updatedAt: '2026-09-11T20:00:00Z' },
+  { id: 10, name: '财务报表.xlsx', type: 'excel', size: 1048576, updatedAt: '2026-09-10T09:45:00Z' },
+  { id: 11, name: '培训资料.pptx', type: 'ppt', size: 8388608, updatedAt: '2026-09-09T13:20:00Z' },
+  { id: 12, name: '接口文档.md', type: 'text', size: 32768, updatedAt: '2026-09-08T11:00:00Z' }
+]
+
+export const mockRecycleFiles = [
+  { id: 101, name: '旧版需求文档.pdf', type: 'pdf', size: 5242880, deletedAt: '2026-09-14T09:00:00Z', expireAt: '2026-10-14T09:00:00Z' },
+  { id: 102, name: '测试截图', type: 'folder', size: 0, deletedAt: '2026-09-13T14:30:00Z', expireAt: '2026-10-13T14:30:00Z' },
+  { id: 103, name: 'temp_data.csv', type: 'text', size: 2097152, deletedAt: '2026-09-12T08:15:00Z', expireAt: '2026-10-12T08:15:00Z' },
+  { id: 104, name: '废弃设计稿.psd', type: 'image', size: 52428800, deletedAt: '2026-09-10T16:45:00Z', expireAt: '2026-10-10T16:45:00Z' },
+  { id: 105, name: '日志归档.zip', type: 'archive', size: 104857600, deletedAt: '2026-09-08T11:20:00Z', expireAt: '2026-10-08T11:20:00Z' }
+]

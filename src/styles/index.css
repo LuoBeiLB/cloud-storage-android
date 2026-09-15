@@ -1,0 +1,100 @@
+/* CloudVault 主题系统 - A极简+B科技融合 */
+
+:root, [data-theme="light"] {
+  --cs-primary: #1677ff;
+  --cs-primary-light: #4096ff;
+  --cs-primary-lighter: #e6f4ff;
+  --cs-primary-dark: #0958d9;
+  --cs-success: #52c41a;
+  --cs-warning: #faad14;
+  --cs-danger: #ff4d4f;
+  --cs-bg-page: #f5f7fa;
+  --cs-bg-container: #ffffff;
+  --cs-bg-elevated: #ffffff;
+  --cs-bg-hover: #f0f2f5;
+  --cs-bg-sidebar: #fafbfc;
+  --cs-text-primary: #1f2937;
+  --cs-text-secondary: #6b7280;
+  --cs-text-tertiary: #9ca3af;
+  --cs-text-disabled: #d1d5db;
+  --cs-border: #e5e7eb;
+  --cs-border-light: #f0f0f0;
+  --cs-shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --cs-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  --cs-shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+  --cs-sidebar-bg: #fafbfc;
+  --cs-sidebar-active-bg: var(--cs-primary-lighter);
+  --cs-sidebar-text: var(--cs-text-secondary);
+  --cs-sidebar-active-text: var(--cs-primary);
+  --cs-sidebar-width: 220px;
+  --cs-header-height: 56px;
+  --cs-header-bg: var(--cs-bg-container);
+  --cs-header-border: var(--cs-border);
+  --cs-radius-sm: 4px;
+  --cs-radius: 8px;
+  --cs-radius-lg: 12px;
+  --cs-transition: 0.2s ease;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --cs-primary: #3b82f6;
+  --cs-primary-light: #60a5fa;
+  --cs-primary-lighter: rgba(59,130,246,0.15);
+  --cs-primary-dark: #2563eb;
+  --cs-success: #4ade80;
+  --cs-warning: #fbbf24;
+  --cs-danger: #f87171;
+  --cs-bg-page: #0d1117;
+  --cs-bg-container: #161b22;
+  --cs-bg-elevated: #1c2128;
+  --cs-bg-hover: #21262d;
+  --cs-bg-sidebar: #0d1117;
+  --cs-text-primary: #e6edf3;
+  --cs-text-secondary: #8b949e;
+  --cs-text-tertiary: #6e7681;
+  --cs-text-disabled: #484f58;
+  --cs-border: #30363d;
+  --cs-border-light: #21262d;
+  --cs-shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+  --cs-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --cs-shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
+  --cs-sidebar-bg: #0d1117;
+  --cs-sidebar-active-bg: var(--cs-primary-lighter);
+  --cs-sidebar-text: var(--cs-text-secondary);
+  --cs-sidebar-active-text: var(--cs-primary-light);
+  --cs-header-bg: var(--cs-bg-container);
+  --cs-header-border: var(--cs-border);
+  color-scheme: dark;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body, #app { height:100%; background:var(--cs-bg-page); color:var(--cs-text-primary); transition:background var(--cs-transition),color var(--cs-transition); }
+a { color:var(--cs-primary); text-decoration:none; }
+
+[data-theme="dark"] {
+  --el-color-primary:#3b82f6; --el-bg-color:#161b22; --el-bg-color-page:#0d1117;
+  --el-bg-color-overlay:#1c2128; --el-text-color-primary:#e6edf3; --el-text-color-regular:#8b949e;
+  --el-border-color:#30363d; --el-border-color-light:#21262d; --el-fill-color-blank:#161b22;
+  --el-fill-color-light:#21262d; --el-fill-color-lighter:#30363d; --el-mask-color:rgba(0,0,0,0.6);
+  --el-box-shadow:0 2px 8px rgba(0,0,0,0.3); --el-box-shadow-light:0 1px 4px rgba(0,0,0,0.2);
+}
+[data-theme="light"] { --el-color-primary:#1677ff; }
+
+.cs-card { background:var(--cs-bg-container); border:1px solid var(--cs-border); border-radius:var(--cs-radius); box-shadow:var(--cs-shadow-sm); transition:all var(--cs-transition); }
+.cs-card:hover { box-shadow:var(--cs-shadow); }
+.cs-page { padding:24px; min-height:calc(100vh - var(--cs-header-height)); }
+.stat-card-gradient-1 { background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); }
+.stat-card-gradient-2 { background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%); }
+.stat-card-gradient-3 { background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%); }
+.stat-card-gradient-4 { background:linear-gradient(135deg,#43e97b 0%,#38f9d7 100%); }
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--cs-text-disabled); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--cs-text-tertiary); }
+.fade-enter-active,.fade-leave-active { transition:opacity 0.2s ease; }
+.fade-enter-from,.fade-leave-to { opacity:0; }
+.theme-toggle { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:50%; cursor:pointer; transition:all var(--cs-transition); color:var(--cs-text-secondary); border:none; background:transparent; }
+.theme-toggle:hover { background:var(--cs-bg-hover); color:var(--cs-primary); }
+.breadcrumb-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+.toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:12px; }

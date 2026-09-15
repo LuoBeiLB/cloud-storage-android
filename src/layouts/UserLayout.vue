@@ -1,0 +1,104 @@
+<template>
+  <div class="layout-user">
+    <aside class="sidebar" :class="{ collapsed: appStore.sidebarCollapsed }">
+      <div class="sidebar-header">
+        <el-icon :size="28" color="var(--cs-primary)"><Coin /></el-icon>
+        <span v-show="!appStore.sidebarCollapsed" class="sidebar-title">CloudVault</span>
+      </div>
+      <el-menu :default-active="route.path" :collapse="appStore.sidebarCollapsed" router class="sidebar-menu">
+        <el-menu-item index="/files"><el-icon><FolderOpened /></el-icon><template #title>我的文件</template></el-menu-item>
+        <el-menu-item index="/recycle"><el-icon><Delete /></el-icon><template #title>回收站</template></el-menu-item>
+        <el-menu-item index="/profile"><el-icon><User /></el-icon><template #title>个人中心</template></el-menu-item>
+      </el-menu>
+      <div class="sidebar-bottom">
+        <div class="quota-info" v-show="!appStore.sidebarCollapsed">
+          <div class="quota-label">
+            <span>存储空间</span>
+            <span class="quota-value">{{ formatSize(userStore.quota.used) }} / {{ formatSize(userStore.quota.total) }}</span>
+          </div>
+          <el-progress :percentage="Math.round(userStore.quota.used / userStore.quota.total * 100)" :stroke-width="6" :show-text="false" :color="quotaPercent > 80 ? 'var(--cs-danger)' : 'var(--cs-primary)'" />
+        </div>
+      </div>
+    </aside>
+    <div class="layout-main">
+      <header class="header">
+        <div class="header-left">
+          <el-icon class="collapse-btn" @click="appStore.toggleSidebar" :size="20">
+            <Fold v-if="!appStore.sidebarCollapsed" /><Expand v-else />
+          </el-icon>
+        </div>
+        <div class="header-right">
+          <button class="theme-toggle" @click="appStore.toggleTheme" :title="appStore.theme === 'light' ? '切换暗色' : '切换亮色'">
+            <el-icon :size="18"><Moon v-if="appStore.theme === 'light'" /><Sunny v-else /></el-icon>
+          </button>
+          <el-dropdown trigger="click">
+            <span class="user-info">
+              <el-avatar :size="32" class="user-avatar"><el-icon :size="18"><User /></el-icon></el-avatar>
+              <span class="user-name">{{ userStore.username }}</span>
+              <el-icon :size="12"><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="router.push('/profile')"><el-icon><Setting /></el-icon>个人设置</el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </header>
+      <main class="content">
+        <router-view v-slot="{ Component }">
+          <transition name="fade" mode="out-in"><component :is="Component" /></transition>
+        </router-view>
+      </main>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAppStore } from '@/stores/app'
+import { useUserStore } from '@/stores/user'
+
+const route = useRoute()
+const router = useRouter()
+const appStore = useAppStore()
+const userStore = useUserStore()
+
+const quotaPercent = computed(() => Math.round(userStore.quota.used / userStore.quota.total * 100))
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B'
+  const k = 1024, sizes = ['B','KB','MB','GB','TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+function handleLogout() { userStore.logout(); router.push('/login') }
+</script>
+
+<style scoped>
+.layout-user { display: flex; height: 100vh; overflow: hidden; }
+.sidebar { width: var(--cs-sidebar-width); height: 100vh; background: var(--cs-sidebar-bg); border-right: 1px solid var(--cs-border); display: flex; flex-direction: column; transition: width var(--cs-transition); flex-shrink: 0; overflow: hidden; }
+.sidebar.collapsed { width: 64px; }
+.sidebar-header { height: var(--cs-header-height); display: flex; align-items: center; padding: 0 16px; gap: 10px; border-bottom: 1px solid var(--cs-border); flex-shrink: 0; }
+.sidebar-title { font-size: 16px; font-weight: 600; color: var(--cs-text-primary); white-space: nowrap; }
+.sidebar-menu { flex: 1; border-right: none !important; padding: 8px; background: transparent !important; }
+.sidebar-menu .el-menu-item { border-radius: var(--cs-radius-sm); margin-bottom: 2px; height: 44px; line-height: 44px; }
+.sidebar-menu .el-menu-item.is-active { background: var(--cs-sidebar-active-bg); color: var(--cs-sidebar-active-text); }
+.sidebar-bottom { padding: 12px 16px; border-top: 1px solid var(--cs-border); flex-shrink: 0; }
+.quota-info .quota-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--cs-text-secondary); margin-bottom: 6px; }
+.quota-value { color: var(--cs-text-primary); font-weight: 500; }
+.layout-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.header { height: var(--cs-header-height); background: var(--cs-header-bg); border-bottom: 1px solid var(--cs-header-border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; flex-shrink: 0; }
+.header-left { display: flex; align-items: center; }
+.collapse-btn { cursor: pointer; color: var(--cs-text-secondary); transition: color var(--cs-transition); }
+.collapse-btn:hover { color: var(--cs-primary); }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.user-info { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 8px; border-radius: var(--cs-radius-sm); transition: background var(--cs-transition); }
+.user-info:hover { background: var(--cs-bg-hover); }
+.user-avatar { background: var(--cs-primary-lighter); color: var(--cs-primary); }
+.user-name { font-size: 14px; color: var(--cs-text-primary); font-weight: 500; }
+.content { flex: 1; overflow-y: auto; background: var(--cs-bg-page); }
+</style>
