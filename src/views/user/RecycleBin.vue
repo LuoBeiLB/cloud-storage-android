@@ -5,7 +5,7 @@
       <el-tag type="info">30 天后自动清理</el-tag>
     </div>
     <div class="cs-card table-card">
-      <el-table :data="recycleFiles" style="width: 100%; min-width: 720px">
+      <el-table :data="recycleFiles" style="width: 100%; min-width: 760px">
         <el-table-column prop="name" label="文件名" min-width="280">
           <template #default="{ row }">
             <div class="file-name-cell"><el-icon :size="18" :color="getFileIconColor(row)"><component :is="getFileIcon(row)" /></el-icon><span>{{ row.name }}</span></div>
@@ -20,12 +20,20 @@
         <el-table-column prop="expireAt" label="过期时间" width="180">
           <template #default="{ row }"><span class="expire-text">{{ formatDate(row.expireAt) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleRestore(row)"><el-icon><RefreshRight /></el-icon>恢复</el-button>
-            <el-popconfirm title="彻底删除后无法恢复，确定？" @confirm="handlePermanentDelete(row)">
-              <template #reference><el-button link type="danger" size="small"><el-icon><Delete /></el-icon>彻底删除</el-button></template>
-            </el-popconfirm>
+            <div class="op-actions">
+              <el-button link type="primary" size="small" @click="handleRestore(row)">
+                <el-icon><RefreshRight /></el-icon><span>恢复</span>
+              </el-button>
+              <el-popconfirm title="彻底删除后无法恢复，确定？" width="220" @confirm="handlePermanentDelete(row)">
+                <template #reference>
+                  <el-button link type="danger" size="small">
+                    <el-icon><Delete /></el-icon><span>彻底删除</span>
+                  </el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -56,6 +64,10 @@ function formatDate(iso) { const d=new Date(iso); return d.toLocaleDateString('z
 .expire-text { color: var(--cs-warning); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; }
 .table-card { overflow-x: auto; }
+.op-actions { display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.op-actions .el-button { margin-left: 0; }
+.op-actions .el-button + .el-button { margin-left: 0; }
+.op-actions .el-button .el-icon + span { margin-left: 4px; }
 @media (max-width: 768px) {
   .breadcrumb-bar { flex-wrap: wrap; gap: 8px; }
   .pagination-bar { justify-content: center; }

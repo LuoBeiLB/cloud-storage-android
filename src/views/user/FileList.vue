@@ -8,8 +8,8 @@
         </el-breadcrumb-item>
       </el-breadcrumb>
       <div class="breadcrumb-actions">
-        <el-button type="primary" @click="showUploadDialog = true"><el-icon><UploadFilled /></el-icon>上传文件</el-button>
-        <el-button @click="handleNewFolder"><el-icon><FolderAdd /></el-icon>新建文件夹</el-button>
+        <el-button type="primary" @click="showUploadDialog = true"><el-icon><UploadFilled /></el-icon><span>上传文件</span></el-button>
+        <el-button @click="handleNewFolder"><el-icon><FolderAdd /></el-icon><span>新建文件夹</span></el-button>
       </div>
     </div>
     <div class="toolbar">
@@ -17,18 +17,20 @@
         <el-input v-model="searchText" placeholder="搜索文件..." :prefix-icon="Search" clearable class="search-input" />
       </div>
       <div class="toolbar-right">
-        <el-select v-model="sortBy" style="width: 140px">
-          <el-option label="按名称" value="name" /><el-option label="按大小" value="size" /><el-option label="按时间" value="time" />
+        <el-select v-model="sortBy" class="sort-select">
+          <el-option label="按名称" value="name" />
+          <el-option label="按大小" value="size" />
+          <el-option label="按时间" value="time" />
         </el-select>
-        <el-button-group>
+        <el-button-group class="view-switch">
           <el-button :type="viewMode === 'table' ? 'primary' : ''" @click="viewMode = 'table'"><el-icon><List /></el-icon></el-button>
           <el-button :type="viewMode === 'grid' ? 'primary' : ''" @click="viewMode = 'grid'"><el-icon><Grid /></el-icon></el-button>
         </el-button-group>
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table :data="filteredFiles" style="width: 100%; min-width: 720px" :default-sort="{ prop: 'updatedAt', order: 'descending' }">
-        <el-table-column prop="name" label="文件名" min-width="300" sortable>
+      <el-table :data="filteredFiles" style="width: 100%; min-width: 720px">
+        <el-table-column prop="name" label="文件名" min-width="300">
           <template #default="{ row }">
             <div class="file-name-cell" @dblclick="handleOpen(row)">
               <el-icon :size="20" :color="getFileIconColor(row)"><component :is="getFileIcon(row)" /></el-icon>
@@ -36,19 +38,21 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="size" label="大小" width="120" sortable>
+        <el-table-column prop="size" label="大小" width="120">
           <template #default="{ row }">{{ row.type === 'folder' ? '--' : formatSize(row.size) }}</template>
         </el-table-column>
-        <el-table-column prop="updatedAt" label="修改时间" width="180" sortable>
+        <el-table-column prop="updatedAt" label="修改时间" width="180">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small"><el-icon><Download /></el-icon>下载</el-button>
-            <el-button link type="primary" size="small"><el-icon><EditPen /></el-icon>重命名</el-button>
-            <el-popconfirm title="确定删除此文件?" @confirm="handleDelete(row.id)">
-              <template #reference><el-button link type="danger" size="small"><el-icon><Delete /></el-icon>删除</el-button></template>
-            </el-popconfirm>
+            <div class="op-actions">
+              <el-button link type="primary" size="small"><el-icon><Download /></el-icon><span>下载</span></el-button>
+              <el-button link type="primary" size="small"><el-icon><EditPen /></el-icon><span>重命名</span></el-button>
+              <el-popconfirm title="确定删除此文件?" width="200" @confirm="handleDelete(row.id)">
+                <template #reference><el-button link type="danger" size="small"><el-icon><Delete /></el-icon><span>删除</span></el-button></template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -100,7 +104,13 @@ const breadcrumbs = computed(() => {
 const filteredFiles = computed(() => {
   let list = [...fileStore.files]
   if (searchText.value) list = list.filter(f => f.name.toLowerCase().includes(searchText.value.toLowerCase()))
-  list.sort((a, b) => { if (a.type === 'folder' && b.type !== 'folder') return -1; if (a.type !== 'folder' && b.type === 'folder') return 1; return 0 })
+  list.sort((a, b) => {
+    if (a.type === 'folder' && b.type !== 'folder') return -1
+    if (a.type !== 'folder' && b.type === 'folder') return 1
+    if (sortBy.value === 'name') return a.name.localeCompare(b.name, 'zh-CN')
+    if (sortBy.value === 'size') return (b.size || 0) - (a.size || 0)
+    return new Date(b.updatedAt) - new Date(a.updatedAt)
+  })
   return list
 })
 
@@ -141,14 +151,30 @@ function formatDate(iso) {
 .grid-meta { font-size: 12px; color: var(--cs-text-tertiary); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; padding: 12px 0; }
 .upload-icon { color: var(--cs-primary); margin-bottom: 8px; }
+
+/* 工具栏：左搜索框、右排序+视图切换，三端统一 flex 排列 */
+.toolbar-left { display: flex; align-items: center; flex: 1; min-width: 0; }
+.toolbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .search-input { width: 240px; }
+.sort-select { width: 140px; }
+
+/* 面包屑右侧按钮 */
+.breadcrumb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.breadcrumb-actions .el-button { margin-left: 0; }
+.breadcrumb-actions .el-button .el-icon + span { margin-left: 4px; }
+
+/* 表格操作列按钮 */
+.op-actions { display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.op-actions .el-button { margin-left: 0; }
+.op-actions .el-button + .el-button { margin-left: 0; }
+.op-actions .el-button .el-icon + span { margin-left: 4px; }
+
 @media (max-width: 768px) {
   .breadcrumb-bar { flex-wrap: wrap; gap: 12px; }
-  .breadcrumb-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .breadcrumb-actions .el-button { margin-left: 0; }
-  .toolbar-left { flex: 1; min-width: 0; }
+  .toolbar { gap: 10px; }
+  .toolbar-left { flex: 1 1 100%; }
   .search-input { width: 100%; }
-  .toolbar-right { width: 100%; display: flex; justify-content: space-between; }
+  .toolbar-right { width: 100%; justify-content: space-between; flex-wrap: nowrap; }
   .file-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
   .pagination-bar { justify-content: center; }
 }

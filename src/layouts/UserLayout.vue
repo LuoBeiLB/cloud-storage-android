@@ -3,8 +3,6 @@
     <aside class="sidebar" :class="{ collapsed: isCollapsed, 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-header">
         <div class="logo-badge"><el-icon :size="20" color="#fff"><Coin /></el-icon></div>
-        <span v-show="!appStore.sidebarCollapsed" class="sidebar-title">CloudVault</span>
-        <el-icon :size="28" color="var(--cs-primary)"><Coin /></el-icon>
         <span v-show="!isCollapsed" class="sidebar-title">CloudVault</span>
       </div>
       <el-menu :default-active="route.path" :collapse="isCollapsed" router class="sidebar-menu" @select="handleMenuNavigate">
@@ -18,7 +16,7 @@
             <span>存储空间</span>
             <span class="quota-value">{{ formatSize(userStore.quota.used) }} / {{ formatSize(userStore.quota.total) }}</span>
           </div>
-          <el-progress :percentage="Math.round(userStore.quota.used / userStore.quota.total * 100)" :stroke-width="6" :show-text="false" :color="quotaPercent > 80 ? 'var(--cs-danger)' : 'var(--cs-primary)'" />
+          <el-progress :percentage="quotaPercent" :stroke-width="6" :show-text="false" :color="quotaPercent > 80 ? 'var(--cs-danger)' : 'var(--cs-primary)'" />
         </div>
       </div>
     </aside>
@@ -130,8 +128,9 @@ function handleLogout() { userStore.logout(); router.push('/login') }
 .sidebar { width: var(--cs-sidebar-width); height: 100vh; background: var(--cs-sidebar-bg); border-right: 1px solid var(--cs-border); display: flex; flex-direction: column; transition: width var(--cs-transition); flex-shrink: 0; overflow: hidden; }
 .sidebar.collapsed { width: 64px; }
 .sidebar-header { height: var(--cs-header-height); display: flex; align-items: center; padding: 0 16px; gap: 10px; border-bottom: 1px solid var(--cs-border); flex-shrink: 0; }
+.sidebar.collapsed .sidebar-header { justify-content: center; padding: 0; }
 .sidebar-title { font-size: 16px; font-weight: 700; color: var(--cs-text-primary); white-space: nowrap; letter-spacing: -0.3px; }
-.logo-badge { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--cs-primary) 0%, var(--cs-primary-dark) 100%); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--cs-primary-shadow); }
+.logo-badge { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--cs-primary) 0%, var(--cs-primary-dark) 100%); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--cs-shadow); }
 .sidebar-menu { flex: 1; border-right: none !important; padding: 8px; background: transparent !important; }
 .sidebar-menu .el-menu-item { position: relative; border-radius: var(--cs-radius); margin-bottom: 4px; height: 44px; line-height: 44px; transition: all 0.2s ease; }
 .sidebar-menu .el-menu-item:hover { background: var(--cs-bg-hover); color: var(--cs-primary); }
