@@ -198,7 +198,10 @@ a { color: var(--cs-primary); text-decoration: none; }
 .el-table td.el-table__cell .cell { line-height: 24px; }
 .el-table .el-table__expand-icon { transition: transform 0.25s ease; }
 .el-table .el-table__expand-icon.el-table__expand-icon--expanded { transform: rotate(90deg); }
-
+/* 固定操作列：不透明背景，防止收缩时文字穿透 */
+.el-table .el-table__row {
+  background-color: var(--cs-bg-container) !important;
+}
 /* ========== 表单控件精细化 ========== */
 .el-input__wrapper { border-radius: var(--cs-radius); transition: box-shadow 0.2s ease, background 0.2s ease; }
 .el-input__wrapper.is-focus { box-shadow: 0 0 0 1px var(--cs-primary) inset, var(--cs-focus-ring); }
