@@ -47,3 +47,19 @@ export const adminApi = {
   // 重置密码 → { password: 'xxx' }（新密码）
   resetPassword: id => request.post(`/admin/users/${id}/reset-password`)
 }
+
+// ===== 文件传输（B 组：分片上传 / 秒传 / 断点续传 / 下载）=====
+export const uploadApi = {
+  // 初始化上传（含秒传分支）：{ name, size, parentId, sha256 } → { status:'done', fileId } 或 { status:'uploading', sessionId, uploadId, chunkSize }
+  init: data => request.post('/uploads/init', data),
+  // 上传单个分片：body 为该分片二进制，Content-Type 固定 octet-stream
+  uploadPart: (sessionId, partNo, blob) => request.put(`/uploads/${sessionId}/parts/${partNo}`, blob, { headers: { 'Content-Type': 'application/octet-stream' }, timeout: 5 * 60 * 1000 }),
+  // 查询会话（断点续传）→ { sessionId, status, uploadId, chunkSize, uploadedParts, partsDetail }
+  getSession: sessionId => request.get(`/uploads/${sessionId}`),
+  // 合并分片、落库、扣配额 → { fileId, alreadyDone }
+  complete: sessionId => request.post(`/uploads/${sessionId}/complete`),
+  // 取消上传
+  abort: sessionId => request.post(`/uploads/${sessionId}/abort`),
+  // 获取 5 分钟预签名下载地址 → { url }
+  getDownloadUrl: fileId => request.get(`/files/${fileId}/download`)
+}

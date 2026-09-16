@@ -4,14 +4,10 @@ import router from '@/router'
 
 const request = axios.create({ baseURL: '/api', timeout: 30000 })
 
-// 请求拦截：注入认证头（Bearer token + 用户标识，后端双通道识别）
+// 请求拦截：注入认证头（后端从 Bearer token 解析当前用户，无需再传 X-User-Id / X-User-Role）
 request.interceptors.request.use(config => {
   const token = localStorage.getItem('cs-token')
-  const userId = localStorage.getItem('cs-user-id')
-  const role = localStorage.getItem('cs-role')
   if (token) config.headers.Authorization = 'Bearer ' + token
-  if (userId) config.headers['X-User-Id'] = userId
-  if (role) config.headers['X-User-Role'] = role
   return config
 })
 
