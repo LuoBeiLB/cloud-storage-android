@@ -53,7 +53,7 @@ import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
-import { mockLogin } from '@/api/mock'
+import { authApi } from '@/api'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -72,12 +72,19 @@ async function handleLogin() {
   if (!valid) return
   loading.value = true
   try {
-    const res = await mockLogin(form.value.username, form.value.password, portal.value)
-    userStore.login(res.data)
+    // 后端真实登录：POST /auth/login → { accessToken, refreshToken, user }
+    const res = await authApi.login({ username: form.value.username.trim(), password: form.value.password })
+    userStore.login(res)
+    if (res.user?.mustChangePassword) ElMessage.warning('当前密码为初始密码，请尽快在个人中心修改')
+    if (portal.value === 'admin' && userStore.role !== 'admin') {
+      ElMessage.warning('该账号无管理员权限，已进入用户端')
+      router.push('/files')
+      return
+    }
     ElMessage.success('登录成功')
     router.push(portal.value === 'admin' ? '/admin/dashboard' : '/files')
   } catch (e) {
-    ElMessage.error('登录失败，请重试')
+    // 错误提示由请求拦截器统一弹出（如"用户名或密码错误"）
   } finally {
     loading.value = false
   }

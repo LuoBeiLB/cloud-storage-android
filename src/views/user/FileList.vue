@@ -3,8 +3,8 @@
     <div class="breadcrumb-bar">
       <el-breadcrumb separator="/">
         <el-breadcrumb-item><el-icon><HomeFilled /></el-icon></el-breadcrumb-item>
-        <el-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
-          <a @click.prevent="navigateTo(item.path)">{{ item.name }}</a>
+        <el-breadcrumb-item v-for="item in fileStore.breadcrumb" :key="item.id">
+          <a @click.prevent="handleNavigate(item.id)">{{ item.name }}</a>
         </el-breadcrumb-item>
       </el-breadcrumb>
       <div class="breadcrumb-actions">
@@ -14,7 +14,7 @@
     </div>
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-input v-model="searchText" placeholder="搜索文件..." :prefix-icon="Search" clearable class="search-input" />
+        <el-input v-model="searchText" placeholder="搜索当前页文件..." :prefix-icon="Search" clearable class="search-input" />
       </div>
       <div class="toolbar-right">
         <el-select v-model="sortBy" class="sort-select">
@@ -29,7 +29,7 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table :data="filteredFiles" style="width: 100%; min-width: 720px">
+      <el-table :data="filteredFiles" v-loading="fileStore.loading" style="width: 100%; min-width: 720px">
         <el-table-column prop="name" label="文件名" min-width="300">
           <template #default="{ row }">
             <div class="file-name-cell" @dblclick="handleOpen(row)">
@@ -39,7 +39,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="size" label="大小" width="120">
-          <template #default="{ row }">{{ row.type === 'folder' ? '--' : formatSize(row.size) }}</template>
+          <template #default="{ row }">{{ row.isDir ? '--' : formatSize(row.size) }}</template>
         </el-table-column>
         <el-table-column prop="updatedAt" label="修改时间" width="180">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
@@ -47,9 +47,9 @@
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <div class="op-actions">
-              <el-button link type="primary" size="small"><el-icon><Download /></el-icon><span>下载</span></el-button>
-              <el-button link type="primary" size="small"><el-icon><EditPen /></el-icon><span>重命名</span></el-button>
-              <el-popconfirm title="确定删除此文件?" width="200" @confirm="handleDelete(row.id)">
+              <el-button link type="primary" size="small" @click="handleDownload(row)"><el-icon><Download /></el-icon><span>下载</span></el-button>
+              <el-button link type="primary" size="small" @click="handleRename(row)"><el-icon><EditPen /></el-icon><span>重命名</span></el-button>
+              <el-popconfirm title="删除后进入回收站，确定？" width="220" @confirm="handleDelete(row.id)">
                 <template #reference><el-button link type="danger" size="small"><el-icon><Delete /></el-icon><span>删除</span></el-button></template>
               </el-popconfirm>
             </div>
@@ -61,17 +61,17 @@
       <div v-for="file in filteredFiles" :key="file.id" class="file-grid-item cs-card" @dblclick="handleOpen(file)">
         <div class="grid-icon"><el-icon :size="48" :color="getFileIconColor(file)"><component :is="getFileIcon(file)" /></el-icon></div>
         <div class="grid-name" :title="file.name">{{ file.name }}</div>
-        <div class="grid-meta">{{ file.type === 'folder' ? '文件夹' : formatSize(file.size) }}</div>
+        <div class="grid-meta">{{ file.isDir ? '文件夹' : formatSize(file.size) }}</div>
       </div>
     </div>
     <div class="pagination-bar">
-      <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]" :total="filteredFiles.length" layout="total, sizes, prev, pager, next" background />
+      <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]" :total="fileStore.total" layout="total, sizes, prev, pager, next" background @current-change="reload" @size-change="handleSizeChange" />
     </div>
     <el-dialog v-model="showUploadDialog" title="上传文件" width="min(520px, 92vw)" destroy-on-close>
       <el-upload drag multiple action="#" :auto-upload="false">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
-        <template #tip><div class="el-upload__tip">支持任意文件类型，单文件最大 10GB</div></template>
+        <template #tip><div class="el-upload__tip">上传接口待后端开放，当前暂不可用</div></template>
       </el-upload>
     </el-dialog>
   </div>
@@ -81,7 +81,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatSize, formatDate } from '@/utils/file'
 
 const fileStore = useFileStore()
 const searchText = ref('')
@@ -94,19 +95,16 @@ const showUploadDialog = ref(false)
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
   if (window.innerWidth <= 768) viewMode.value = 'grid'
+  fileStore.loadDir(0, 1, pageSize.value)
 })
 
-const breadcrumbs = computed(() => {
-  const parts = fileStore.currentPath.split('/').filter(Boolean)
-  return parts.map((p, i) => ({ name: p, path: '/' + parts.slice(0, i + 1).join('/') + '/' }))
-})
-
+// 搜索与排序为当前页本地处理（后端暂无搜索接口）
 const filteredFiles = computed(() => {
   let list = [...fileStore.files]
   if (searchText.value) list = list.filter(f => f.name.toLowerCase().includes(searchText.value.toLowerCase()))
   list.sort((a, b) => {
-    if (a.type === 'folder' && b.type !== 'folder') return -1
-    if (a.type !== 'folder' && b.type === 'folder') return 1
+    if (a.isDir && !b.isDir) return -1
+    if (!a.isDir && b.isDir) return 1
     if (sortBy.value === 'name') return a.name.localeCompare(b.name, 'zh-CN')
     if (sortBy.value === 'size') return (b.size || 0) - (a.size || 0)
     return new Date(b.updatedAt) - new Date(a.updatedAt)
@@ -114,10 +112,37 @@ const filteredFiles = computed(() => {
   return list
 })
 
-function navigateTo(path) { fileStore.navigateTo(path) }
-function handleOpen(row) { if (row.type === 'folder') fileStore.navigateTo(row.path) }
-function handleDelete(id) { fileStore.deleteFile(id); ElMessage.success('已删除') }
-function handleNewFolder() { ElMessage.info('新建文件夹功能待接入接口') }
+function reload() { fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value) }
+function handleSizeChange() { currentPage.value = 1; reload() }
+function handleNavigate(id) { currentPage.value = 1; fileStore.navigateTo(id) }
+
+function handleOpen(row) {
+  if (row.isDir) { handleNavigate(row.id) }
+  else ElMessage.info('在线预览待后端接口支持')
+}
+function handleDownload() { ElMessage.info('下载待后端接口支持') }
+
+function handleDelete(id) {
+  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); reload() }).catch(() => {})
+}
+
+function handleRename(row) {
+  ElMessageBox.prompt('请输入新名称', '重命名', { inputValue: row.name, confirmButtonText: '确定', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
+    .then(({ value }) => {
+      fileStore.rename(row.id, value.trim()).then(() => { ElMessage.success('重命名成功'); reload() }).catch(() => {})
+    }).catch(() => {})
+}
+
+function handleNewFolder() {
+  ElMessageBox.prompt('请输入文件夹名称', '新建文件夹', { confirmButtonText: '创建', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
+    .then(({ value }) => {
+      fileStore.createFolder(value.trim()).then(res => {
+        // 后端同级重名会自动改名，返回实际创建的名称
+        ElMessage.success(res?.name ? `已创建「${res.name}」` : '文件夹已创建')
+        reload()
+      }).catch(() => {})
+    }).catch(() => {})
+}
 
 function getFileIcon(file) {
   const m = { folder:'Folder',pdf:'Document',image:'Picture',word:'Document',excel:'Grid',ppt:'Monitor',video:'VideoCamera',archive:'Files',text:'Notebook' }
@@ -126,16 +151,6 @@ function getFileIcon(file) {
 function getFileIconColor(file) {
   const m = { folder:'#faad14',pdf:'#ff4d4f',image:'#52c41a',word:'#1677ff',excel:'#52c41a',ppt:'#fa8c16',video:'#722ed1',archive:'#8c8c8c',text:'#595959' }
   return m[file.type] || '#8c8c8c'
-}
-function formatSize(bytes) {
-  if (bytes === 0) return '0 B'
-  const k = 1024, s = ['B','KB','MB','GB','TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + s[i]
-}
-function formatDate(iso) {
-  const d = new Date(iso)
-  return d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 </script>
 

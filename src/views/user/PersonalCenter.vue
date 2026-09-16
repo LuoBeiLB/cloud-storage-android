@@ -12,9 +12,9 @@
           <div class="quota-detail"><span>已用 {{ formatSize(userStore.quota.used) }}</span><span>总计 {{ formatSize(userStore.quota.total) }}</span></div>
         </div>
         <div class="quota-stats">
-          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-primary)"><Document /></el-icon><div><div class="stat-num">156</div><div class="stat-label">文件数</div></div></div>
-          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-success)"><Folder /></el-icon><div><div class="stat-num">12</div><div class="stat-label">文件夹</div></div></div>
-          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-warning)"><Delete /></el-icon><div><div class="stat-num">5</div><div class="stat-label">回收站</div></div></div>
+          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-primary)"><Document /></el-icon><div><div class="stat-num">{{ stats.totalFiles }}</div><div class="stat-label">文件数</div></div></div>
+          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-success)"><Folder /></el-icon><div><div class="stat-num">{{ stats.totalDirs }}</div><div class="stat-label">文件夹</div></div></div>
+          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-warning)"><Delete /></el-icon><div><div class="stat-num">{{ stats.recycleCount }}</div><div class="stat-label">回收站</div></div></div>
         </div>
       </div>
       <div class="cs-card password-card">
@@ -23,7 +23,7 @@
           <el-form-item label="当前密码"><el-input v-model="pwdForm.oldPassword" type="password" show-password /></el-form-item>
           <el-form-item label="新密码"><el-input v-model="pwdForm.newPassword" type="password" show-password /></el-form-item>
           <el-form-item label="确认密码"><el-input v-model="pwdForm.confirmPassword" type="password" show-password /></el-form-item>
-          <el-form-item><el-button type="primary" @click="handleChangePassword">确认修改</el-button></el-form-item>
+          <el-form-item><el-button type="primary" :loading="changing" @click="handleChangePassword">确认修改</el-button></el-form-item>
         </el-form>
       </div>
       <div class="cs-card info-card">
@@ -31,8 +31,8 @@
         <el-descriptions :column="1" border style="margin-top: 20px">
           <el-descriptions-item label="用户名">{{ userStore.username }}</el-descriptions-item>
           <el-descriptions-item label="角色"><el-tag :type="userStore.role === 'admin' ? 'danger' : ''">{{ userStore.role === 'admin' ? '管理员' : '普通用户' }}</el-tag></el-descriptions-item>
-          <el-descriptions-item label="注册时间">2026-08-05</el-descriptions-item>
-          <el-descriptions-item label="上次登录">2026-09-15 08:30</el-descriptions-item>
+          <el-descriptions-item label="用户ID">{{ userStore.userId || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="上次登录">--</el-descriptions-item>
         </el-descriptions>
       </div>
     </div>
@@ -40,15 +40,42 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { statsApi, authApi } from '@/api'
+import { formatSize } from '@/utils/file'
 
 const userStore = useUserStore()
 const pwdForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
-const quotaPercent = computed(() => Math.round(userStore.quota.used / userStore.quota.total * 100))
-function formatSize(bytes) { if (!bytes) return '0 B'; const k=1024,s=['B','KB','MB','GB','TB']; const i=Math.floor(Math.log(bytes)/Math.log(k)); return parseFloat((bytes/Math.pow(k,i)).toFixed(1))+' '+s[i] }
-function handleChangePassword() { if (pwdForm.value.newPassword !== pwdForm.value.confirmPassword) { ElMessage.error('两次密码输入不一致'); return }; ElMessage.success('密码修改成功（Mock）') }
+const changing = ref(false)
+const stats = ref({ totalFiles: 0, totalDirs: 0, recycleCount: 0 })
+
+const quotaPercent = computed(() => userStore.quota.total > 0 ? Math.round(userStore.quota.used / userStore.quota.total * 100) : 0)
+
+onMounted(() => {
+  // 刷新配额（/auth/profile）
+  userStore.loadProfile().catch(() => {})
+  // 个人存储统计（/stats/overview）
+  statsApi.overview().then(s => {
+    stats.value = { totalFiles: s.totalFiles || 0, totalDirs: s.totalDirs || 0, recycleCount: s.recycleCount || 0 }
+  }).catch(() => {})
+})
+
+async function handleChangePassword() {
+  if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword) { ElMessage.error('请填写当前密码和新密码'); return }
+  if (pwdForm.value.newPassword !== pwdForm.value.confirmPassword) { ElMessage.error('两次密码输入不一致'); return }
+  changing.value = true
+  try {
+    await authApi.changePassword({ oldPassword: pwdForm.value.oldPassword, newPassword: pwdForm.value.newPassword })
+    ElMessage.success('密码修改成功')
+    pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  } catch (e) {
+    // 错误提示由拦截器统一弹出
+  } finally {
+    changing.value = false
+  }
+}
 </script>
 
 <style scoped>

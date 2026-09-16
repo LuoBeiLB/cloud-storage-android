@@ -15,8 +15,8 @@
         <div ref="topUsersChart" class="chart-container"></div>
       </div>
       <div class="cs-card chart-card">
-        <h3 class="chart-title">近 7 日流量趋势</h3>
-        <div ref="trafficChart" class="chart-container"></div>
+        <h3 class="chart-title">文件类型分布</h3>
+        <div ref="typeChart" class="chart-container"></div>
       </div>
     </div>
   </div>
@@ -26,18 +26,23 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useAppStore } from '@/stores/app'
-import { mockStats, mockTopUsers, mockTrafficData } from '@/mock/stats'
+import { statsApi, adminApi } from '@/api'
+import { formatSize } from '@/utils/file'
 
 const appStore = useAppStore()
 const topUsersChart = ref(null)
-const trafficChart = ref(null)
-let topChart = null, flowChart = null
+const typeChart = ref(null)
+let topChart = null, typeChartInstance = null
+
+// 后端 /stats/overview（个人维度）+ /admin/users（Top10）
+const overview = ref({ totalFiles: 0, totalDirs: 0, totalBytes: 0, todayNew: 0, recycleCount: 0, recycleBytes: 0, typeBreakdown: [] })
+const topUsers = ref([])
 
 const statCards = computed(() => [
-  { label: '总容量', value: formatSize(mockStats.totalCapacity), icon: 'Coin', gradient: 'stat-card-gradient-1' },
-  { label: '已使用', value: formatSize(mockStats.usedCapacity), icon: 'Loading', gradient: 'stat-card-gradient-2' },
-  { label: '注册用户', value: mockStats.totalUsers + ' 人', icon: 'UserFilled', gradient: 'stat-card-gradient-3' },
-  { label: '文件总数', value: mockStats.totalFiles.toLocaleString(), icon: 'Files', gradient: 'stat-card-gradient-4' }
+  { label: '已用空间', value: formatSize(overview.value.totalBytes), icon: 'Coin', gradient: 'stat-card-gradient-1' },
+  { label: `文件总数（今日 +${overview.value.todayNew}）`, value: overview.value.totalFiles.toLocaleString(), icon: 'Files', gradient: 'stat-card-gradient-4' },
+  { label: '目录总数', value: overview.value.totalDirs.toLocaleString(), icon: 'Folder', gradient: 'stat-card-gradient-3' },
+  { label: '回收站文件', value: overview.value.recycleCount.toLocaleString(), icon: 'Delete', gradient: 'stat-card-gradient-2' }
 ])
 
 function getTextColor() { return appStore.theme === 'dark' ? '#e6edf3' : '#1f2937' }
@@ -49,7 +54,7 @@ function initTopUsersChart() {
   if (topChart) topChart.dispose()
   topChart = echarts.init(topUsersChart.value)
   const isDark = appStore.theme === 'dark'
-  const sorted = [...mockTopUsers].sort((a, b) => a.used - b.used)
+  const sorted = [...topUsers.value].sort((a, b) => a.used - b.used)
   topChart.setOption({
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => p[0].name + ': ' + formatSize(p[0].value) },
     grid: { left: 80, right: 30, top: 10, bottom: 20 },
@@ -59,29 +64,42 @@ function initTopUsersChart() {
   })
 }
 
-function initTrafficChart() {
-  if (!trafficChart.value) return
-  if (flowChart) flowChart.dispose()
-  flowChart = echarts.init(trafficChart.value)
-  flowChart.setOption({
-    tooltip: { trigger: 'axis', formatter: params => params[0].axisValue + '<br/>' + params.map(p => p.marker + p.seriesName + ': ' + formatSize(p.value)).join('<br/>') },
-    legend: { data: ['上传','下载'], top: 0, textStyle: { color: getTextColor() } },
-    grid: { left: 60, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: 'category', data: mockTrafficData.dates, axisLabel: { color: getSubTextColor() }, axisLine: { lineStyle: { color: getBorderColor() } } },
-    yAxis: { type: 'value', axisLabel: { color: getSubTextColor(), formatter: v => formatSize(v) }, splitLine: { lineStyle: { color: getBorderColor() } }, axisLine: { show: false } },
-    series: [
-      { name: '上传', type: 'line', smooth: true, data: mockTrafficData.upload, lineStyle: { color: '#1677ff', width: 2 }, itemStyle: { color: '#1677ff' }, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(22,119,255,0.25)'},{offset:1,color:'rgba(22,119,255,0.02)'}]) } },
-      { name: '下载', type: 'line', smooth: true, data: mockTrafficData.download, lineStyle: { color: '#764ba2', width: 2 }, itemStyle: { color: '#764ba2' }, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(118,75,162,0.25)'},{offset:1,color:'rgba(118,75,162,0.02)'}]) } }
-    ]
+function initTypeChart() {
+  if (!typeChart.value) return
+  if (typeChartInstance) typeChartInstance.dispose()
+  typeChartInstance = echarts.init(typeChart.value)
+  const isDark = appStore.theme === 'dark'
+  const data = (overview.value.typeBreakdown || []).map(t => ({ name: t.ext ? '.' + t.ext : '其他', value: t.count }))
+  typeChartInstance.setOption({
+    tooltip: { trigger: 'item', formatter: p => `${p.name}: ${p.value} 个 (${p.percent}%)` },
+    legend: { orient: 'vertical', right: 10, top: 'center', textStyle: { color: getTextColor() } },
+    series: [{
+      type: 'pie', radius: ['42%', '70%'], center: ['38%', '50%'],
+      data,
+      label: { color: getSubTextColor() },
+      itemStyle: { borderRadius: 6, borderWidth: 2, borderColor: isDark ? '#161b22' : '#fff' }
+    }]
   })
 }
 
-function formatSize(bytes) { if (!bytes) return '0 B'; const k=1024,s=['B','KB','MB','GB','TB']; const i=Math.floor(Math.log(bytes)/Math.log(k)); return parseFloat((bytes/Math.pow(k,i)).toFixed(1))+s[i] }
-function refreshCharts() { initTopUsersChart(); initTrafficChart() }
-function handleResize() { topChart?.resize(); flowChart?.resize() }
+function refreshCharts() { initTopUsersChart(); initTypeChart() }
+function handleResize() { topChart?.resize(); typeChartInstance?.resize() }
 
-onMounted(() => { refreshCharts(); window.addEventListener('resize', handleResize) })
-onBeforeUnmount(() => { window.removeEventListener('resize', handleResize); topChart?.dispose(); flowChart?.dispose() })
+onMounted(async () => {
+  await Promise.allSettled([
+    statsApi.overview().then(s => { overview.value = { ...overview.value, ...s } }),
+    adminApi.listUsers({ page: 1, size: 100 }).then(res => {
+      topUsers.value = (res.content || [])
+        .map(u => ({ username: u.username, used: u.usedBytes || 0 }))
+        .sort((a, b) => b.used - a.used)
+        .slice(0, 10)
+    })
+  ])
+  refreshCharts()
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => { window.removeEventListener('resize', handleResize); topChart?.dispose(); typeChartInstance?.dispose() })
 watch(() => appStore.theme, () => { refreshCharts() })
 </script>
 
