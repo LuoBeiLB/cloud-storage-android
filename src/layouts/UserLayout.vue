@@ -81,7 +81,7 @@ const mobileMenuOpen = ref(false)
 
 // 移动端抽屉里菜单始终展开；桌面/平板的折叠状态由 appStore 控制
 const isCollapsed = computed(() => !isMobile.value && appStore.sidebarCollapsed)
-const quotaPercent = computed(() => Math.round(userStore.quota.used / userStore.quota.total * 100))
+const quotaPercent = computed(() => userStore.quota.total > 0 ? Math.round(userStore.quota.used / userStore.quota.total * 100) : 0)
 
 function updateViewport() {
   isMobile.value = window.innerWidth <= 768

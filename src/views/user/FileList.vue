@@ -29,24 +29,25 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table :data="filteredFiles" v-loading="fileStore.loading" style="width: 100%; min-width: 720px">
+      <el-table :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px">
         <el-table-column prop="name" label="文件名" min-width="300">
           <template #default="{ row }">
-            <div class="file-name-cell" @dblclick="handleOpen(row)">
+            <div v-if="row.isEmpty" class="empty-folder-tip">{{ row.name }}</div>
+            <div v-else class="file-name-cell" @dblclick="handleOpen(row)">
               <el-icon :size="20" :color="getFileIconColor(row)"><component :is="getFileIcon(row)" /></el-icon>
               <span class="file-name-text">{{ row.name }}</span>
             </div>
           </template>
         </el-table-column>
         <el-table-column prop="size" label="大小" width="120">
-          <template #default="{ row }">{{ row.isDir ? '--' : formatSize(row.size) }}</template>
+          <template #default="{ row }">{{ row.isEmpty ? '' : (row.isDir ? '--' : formatSize(row.size)) }}</template>
         </el-table-column>
         <el-table-column prop="updatedAt" label="修改时间" width="180">
-          <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
+          <template #default="{ row }">{{ row.isEmpty ? '' : formatDate(row.updatedAt) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
-            <div class="op-actions">
+            <div v-if="!row.isEmpty" class="op-actions">
               <el-button link type="primary" size="small" @click="handleDownload(row)"><el-icon><Download /></el-icon><span>下载</span></el-button>
               <el-button link type="primary" size="small" @click="handleRename(row)"><el-icon><EditPen /></el-icon><span>重命名</span></el-button>
               <el-popconfirm title="删除后进入回收站，确定？" width="220" @confirm="handleDelete(row.id)">
@@ -81,8 +82,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
+import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { formatSize, formatDate } from '@/utils/file'
+import { formatSize, formatDate, mapFileNode } from '@/utils/file'
 
 const fileStore = useFileStore()
 const searchText = ref('')
@@ -113,6 +115,24 @@ const filteredFiles = computed(() => {
 })
 
 function reload() { fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value) }
+
+// 树形表格：给每行标记 hasChildren（文件夹才能展开）
+const tableFiles = computed(() => {
+  return filteredFiles.value.map(f => ({ ...f, hasChildren: f.isDir }))
+})
+
+// 懒加载子目录
+async function loadChildren(row, treeNode, resolve) {
+  try {
+    const res = await fileApi.listDir({ parent: row.id, page: 1, size: 1000 })
+    const children = (res.list || []).map(f => mapFileNode(f)).map(f => ({ ...f, hasChildren: f.isDir }))
+    if (children.length === 0) {
+      resolve([{ id: `empty-${row.id}`, name: '暂无文件', isEmpty: true, hasChildren: false, isDir: false }])
+    } else {
+      resolve(children)
+    }
+  } catch { resolve([]) }
+}
 function handleSizeChange() { currentPage.value = 1; reload() }
 function handleNavigate(id) { currentPage.value = 1; fileStore.navigateTo(id) }
 
@@ -183,6 +203,66 @@ function getFileIconColor(file) {
 .op-actions .el-button { margin-left: 0; }
 .op-actions .el-button + .el-button { margin-left: 0; }
 .op-actions .el-button .el-icon + span { margin-left: 4px; }
+
+/* ===== 树形表格样式优化 ===== */
+/* 展开箭头：颜色、大小、旋转动画 */
+.file-table :deep(.el-table__expand-icon) {
+  color: #c0c4cc;
+  font-size: 16px;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  transition: transform 0.2s ease, color 0.2s ease;
+  cursor: pointer;
+}
+.file-table :deep(.el-table__expand-icon:hover) {
+  color: var(--cs-primary, #409eff);
+}
+.file-table :deep(.el-table__expand-icon--expanded) {
+  transform: rotate(90deg);
+  color: var(--cs-primary, #409eff);
+}
+
+/* 缩进与占位：保持对齐 */
+.file-table :deep(.el-table__indent) {
+  padding-left: 24px !important;
+}
+.file-table :deep(.el-table__placeholder) {
+  width: 24px;
+  display: inline-block;
+}
+
+/* 子级行背景：区分层级 */
+.file-table :deep(.el-table__row--level-1) {
+  background-color: #fafbfc;
+}
+.file-table :deep(.el-table__row--level-2) {
+  background-color: #f5f7fa;
+}
+.file-table :deep(.el-table__row--level-3) {
+  background-color: #f0f2f5;
+}
+
+/* 行 hover 效果 */
+.file-table :deep(.el-table__body tr:hover > td) {
+  background-color: #ecf5ff !important;
+}
+
+/* 空文件夹提示行 */
+.empty-folder-tip {
+  color: #c0c4cc;
+  font-size: 13px;
+  font-style: italic;
+  padding-left: 4px;
+  cursor: default;
+}
+
+/* 文件名单元格：与箭头对齐 */
+.file-table :deep(.el-table__row .cell) {
+  display: flex;
+  align-items: center;
+}
 
 @media (max-width: 768px) {
   .breadcrumb-bar { flex-wrap: wrap; gap: 12px; }
