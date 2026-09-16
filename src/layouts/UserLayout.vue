@@ -59,6 +59,7 @@
           <transition name="fade" mode="out-in"><component :is="Component" /></transition>
         </router-view>
       </main>
+      <ForcePasswordDialog />
     </div>
   </div>
 </template>
@@ -68,6 +69,7 @@ import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
+import ForcePasswordDialog from '@/components/ForcePasswordDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
