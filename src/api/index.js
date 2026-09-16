@@ -6,7 +6,9 @@ export const authApi = {
   logout: () => request.post('/auth/logout'),
   changePassword: data => request.post('/auth/change-password', data),
   profile: () => request.get('/auth/profile'),
-  me: () => request.get('/user/me')
+  me: () => request.get('/user/me'),
+  // 刷新 token：{ refreshToken } → LoginResponse
+  refresh: data => request.post('/auth/refresh', data)
 }
 
 // ===== 文件管理 =====
@@ -22,7 +24,13 @@ export const fileApi = {
   // 回收站列表：{ page, size } → { total, list }
   trash: params => request.get('/files/trash', { params }),
   // 从回收站还原
-  restore: id => request.post(`/files/${id}/restore`)
+  restore: id => request.post(`/files/${id}/restore`),
+  // 下载文件 → Map<string,string>
+  download: id => request.get(`/files/${id}/download`),
+  // 获取完整目录树（扁平 id+parentId 列表，前端自行建树）
+  tree: () => request.get('/files/tree'),
+  // 批量移动：{ ids: number[], targetParentId: number } → FileNodeVO[]
+  batchMove: data => request.patch('/files/batch-move', data)
 }
 
 // ===== 统计大盘（个人维度）=====

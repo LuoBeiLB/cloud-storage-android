@@ -10,6 +10,7 @@
       <div class="breadcrumb-actions">
         <el-button type="primary" @click="showUploadDialog = true"><el-icon><UploadFilled /></el-icon><span>上传文件</span></el-button>
         <el-button @click="handleNewFolder"><el-icon><FolderAdd /></el-icon><span>新建文件夹</span></el-button>
+        <el-button v-if="selectedRows.length > 0" type="warning" @click="openMoveDialog"><el-icon><FolderOpened /></el-icon><span>移动到（{{ selectedRows.length }}）</span></el-button>
       </div>
     </div>
     <div class="toolbar">
@@ -29,11 +30,11 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px">
+      <el-table :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ children: 'children', hasChildren: 'hasChildren', checkStrictly: true }" :load="loadChildren" style="width: 100%; min-width: 720px" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="50" />
         <el-table-column prop="name" label="文件名" min-width="300">
           <template #default="{ row }">
-            <div v-if="row.isEmpty" class="empty-folder-tip">{{ row.name }}</div>
-            <div v-else class="file-name-cell" :class="{ 'drop-target': dragOverId === row.id && row.isDir, 'dragging': draggedItem && draggedItem.id === row.id, 'drop-success': dropSuccessId === row.id }" @dblclick="handleOpen(row)" @dragover="row.isDir && handleDragOver(row, $event)" @dragleave="handleDragLeave" @drop="row.isDir && handleDrop(row, $event)">
+            <div class="file-name-cell" :class="{ 'drop-target': dragOverId === row.id && row.isDir, 'dragging': draggedItem && draggedItem.id === row.id, 'drop-success': dropSuccessId === row.id }" @dblclick="handleOpen(row)" @dragover="row.isDir && handleDragOver(row, $event)" @dragleave="handleDragLeave" @drop="row.isDir && handleDrop(row, $event)">
               <el-icon class="drag-handle" draggable="true" @dragstart="handleDragStart(row, $event)" @dragend="handleDragEnd" :size="14"><Rank /></el-icon>
               <el-icon :size="20" :color="getFileIconColor(row)"><component :is="getFileIcon(row)" /></el-icon>
               <span class="file-name-text">{{ row.name }}</span>
@@ -41,14 +42,14 @@
           </template>
         </el-table-column>
         <el-table-column prop="size" label="大小" width="120">
-          <template #default="{ row }">{{ row.isEmpty ? '' : (row.isDir ? '--' : formatSize(row.size)) }}</template>
+          <template #default="{ row }">{{ row.isDir ? '--' : formatSize(row.size) }}</template>
         </el-table-column>
         <el-table-column prop="updatedAt" label="修改时间" width="180">
-          <template #default="{ row }">{{ row.isEmpty ? '' : formatDate(row.updatedAt) }}</template>
+          <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
-            <div v-if="!row.isEmpty" class="op-actions">
+            <div class="op-actions">
               <el-button link type="primary" size="small" @click="handleDownload(row)"><el-icon><Download /></el-icon><span>下载</span></el-button>
               <el-button link type="primary" size="small" @click="handleRename(row)"><el-icon><EditPen /></el-icon><span>重命名</span></el-button>
               <el-popconfirm title="删除后进入回收站，确定？" width="220" @confirm="handleDelete(row.id)">
@@ -76,12 +77,21 @@
         <template #tip><div class="el-upload__tip">上传接口待后端开放，当前暂不可用</div></template>
       </el-upload>
     </el-dialog>
+    <el-dialog v-model="showMoveDialog" title="移动到" width="min(480px, 92vw)" destroy-on-close>
+      <div v-loading="moveTreeLoading" style="min-height: 200px; max-height: 400px; overflow-y: auto">
+        <el-tree :data="folderTreeData" :props="{ label: 'label', children: 'children', disabled: 'disabled' }" node-key="id" highlight-current :expand-on-click-node="false" default-expand-all @node-click="handleMoveNodeClick" />
+      </div>
+      <template #footer>
+        <el-button @click="showMoveDialog = false">取消</el-button>
+        <el-button type="primary" :loading="moveLoading" :disabled="moveTargetId == null" @click="confirmBatchMove">确定移动</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Search, Rank } from '@element-plus/icons-vue'
+import { Search, Rank, FolderOpened } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -98,6 +108,12 @@ const draggedItem = ref(null)
 const dragOverId = ref(null)
 const dropSuccessId = ref(null)
 const tableKey = ref(0)
+const selectedRows = ref([])
+const showMoveDialog = ref(false)
+const folderTreeData = ref([])
+const moveTargetId = ref(null)
+const moveTreeLoading = ref(false)
+const moveLoading = ref(false)
 
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
@@ -131,11 +147,7 @@ async function loadChildren(row, treeNode, resolve) {
   try {
     const res = await fileApi.listDir({ parent: row.id, page: 1, size: 1000 })
     const children = (res.list || []).map(f => mapFileNode(f)).map(f => ({ ...f, hasChildren: f.isDir }))
-    if (children.length === 0) {
-      resolve([{ id: `empty-${row.id}`, name: '暂无文件', isEmpty: true, hasChildren: false, isDir: false }])
-    } else {
-      resolve(children)
-    }
+    resolve(children)
   } catch { resolve([]) }
 }
 // 拖拽移动
@@ -175,8 +187,69 @@ async function handleDrop(targetRow, event) {
     await fileApi.update(item.id, { parentId: targetRow.id })
     dropSuccessId.value = targetRow.id
     ElMessage.success(`已将「${item.name}」移动到「${targetRow.name}」`)
-    setTimeout(() => { dropSuccessId.value = null; tableKey.value++; reload() }, 400)
+    setTimeout(() => { dropSuccessId.value = null; selectedRows.value = []; tableKey.value++; reload() }, 400)
   } catch {}
+}
+// 表格勾选
+function handleSelectionChange(rows) { selectedRows.value = rows }
+
+// 批量移动：打开文件夹树弹窗
+async function openMoveDialog() {
+  showMoveDialog.value = true
+  moveTargetId.value = null
+  moveTreeLoading.value = true
+  try {
+    const list = await fileApi.tree()
+    folderTreeData.value = buildFolderTree(list || [], selectedRows.value.map(r => r.id))
+  } catch { folderTreeData.value = [{ id: 0, label: '全部文件', children: [] }] }
+  finally { moveTreeLoading.value = false }
+}
+
+function handleMoveNodeClick(node) {
+  if (node.disabled) { moveTargetId.value = null; return }
+  moveTargetId.value = node.id
+}
+
+// 扁平列表 → 树形结构（仅文件夹）
+function buildFolderTree(flatList, excludeIds = []) {
+  const dirs = flatList.filter(f => f.isDir)
+  // 禁用集合：被选中项自身 + 其全部后代目录（不能移入自身或自己的子目录，否则后端判环回滚）
+  const childMap = {}
+  flatList.forEach(f => { (childMap[f.parentId] = childMap[f.parentId] || []).push(f.id) })
+  const disabledSet = new Set()
+  const stack = [...excludeIds]
+  while (stack.length) {
+    const id = stack.pop()
+    if (disabledSet.has(id)) continue
+    disabledSet.add(id)
+    for (const cid of childMap[id] || []) stack.push(cid)
+  }
+  const map = {}
+  dirs.forEach(d => { map[d.id] = { id: d.id, label: d.name, children: [], disabled: disabledSet.has(d.id) } })
+  const roots = []
+  dirs.forEach(d => {
+    if (d.parentId === 0 || !map[d.parentId]) roots.push(map[d.id])
+    else map[d.parentId].children.push(map[d.id])
+  })
+  return [{ id: 0, label: '全部文件', children: roots }]
+}
+
+// 确认批量移动
+async function confirmBatchMove() {
+  if (moveTargetId.value == null) return
+  moveLoading.value = true
+  try {
+    // 过滤掉目标目录未变化的项目（已在该目录下，避免后端报无意义移动导致整体回滚）
+    const moving = selectedRows.value.filter(r => r.parentId !== moveTargetId.value)
+    if (moving.length === 0) { ElMessage.info('所选项目已在该目录下'); moveLoading.value = false; return }
+    const ids = moving.map(r => r.id)
+    await fileApi.batchMove({ ids, targetParentId: moveTargetId.value })
+    ElMessage.success(`已移动 ${ids.length} 个项目`)
+    showMoveDialog.value = false
+    selectedRows.value = []
+    tableKey.value++
+    reload()
+  } catch {} finally { moveLoading.value = false }
 }
 function handleSizeChange() { currentPage.value = 1; reload() }
 function handleNavigate(id) { currentPage.value = 1; fileStore.navigateTo(id) }
@@ -185,16 +258,31 @@ function handleOpen(row) {
   if (row.isDir) { handleNavigate(row.id) }
   else ElMessage.info('在线预览待后端接口支持')
 }
-function handleDownload() { ElMessage.info('下载待后端接口支持') }
+async function handleDownload(row) {
+  if (row.isDir) return ElMessage.warning('文件夹暂不支持下载')
+  try {
+    const res = await fileApi.download(row.id)
+    const url = res?.url || res?.downloadUrl || ''
+    if (!url) return ElMessage.warning('下载链接为空')
+    const a = document.createElement('a')
+    a.href = url
+    a.download = res?.filename || res?.fileName || row.name
+    a.target = '_blank'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    ElMessage.success(`开始下载「${row.name}」`)
+  } catch {}
+}
 
 function handleDelete(id) {
-  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); reload() }).catch(() => {})
+  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {})
 }
 
 function handleRename(row) {
   ElMessageBox.prompt('请输入新名称', '重命名', { inputValue: row.name, confirmButtonText: '确定', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
     .then(({ value }) => {
-      fileStore.rename(row.id, value.trim()).then(() => { ElMessage.success('重命名成功'); reload() }).catch(() => {})
+      fileStore.rename(row.id, value.trim()).then(() => { ElMessage.success('重命名成功'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {})
     }).catch(() => {})
 }
 
@@ -362,18 +450,7 @@ function getFileIconColor(file) {
 .file-table :deep(.el-table__row--level-3) .file-name-cell { padding-left: 60px; }
 .file-table :deep(.el-table__row--level-4) .file-name-cell { padding-left: 80px; }
 .file-table :deep(.el-table__row--level-5) .file-name-cell { padding-left: 100px; }
-.file-table :deep(.el-table__row--level-1) .empty-folder-tip { padding-left: 74px; }
-.file-table :deep(.el-table__row--level-2) .empty-folder-tip { padding-left: 94px; }
-.file-table :deep(.el-table__row--level-3) .empty-folder-tip { padding-left: 114px; }
 
-/* 空文件夹提示行 */
-.empty-folder-tip {
-  color: #c0c4cc;
-  font-size: 13px;
-  font-style: italic;
-  padding-left: 54px;
-  cursor: default;
-}
 
 /* 文件名单元格：与箭头对齐 */
 .file-table :deep(.el-table__row .cell) {
