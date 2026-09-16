@@ -29,11 +29,12 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px">
+      <el-table :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px">
         <el-table-column prop="name" label="文件名" min-width="300">
           <template #default="{ row }">
             <div v-if="row.isEmpty" class="empty-folder-tip">{{ row.name }}</div>
-            <div v-else class="file-name-cell" @dblclick="handleOpen(row)">
+            <div v-else class="file-name-cell" :class="{ 'drop-target': dragOverId === row.id && row.isDir, 'dragging': draggedItem && draggedItem.id === row.id, 'drop-success': dropSuccessId === row.id }" @dblclick="handleOpen(row)" @dragover="row.isDir && handleDragOver(row, $event)" @dragleave="handleDragLeave" @drop="row.isDir && handleDrop(row, $event)">
+              <el-icon class="drag-handle" draggable="true" @dragstart="handleDragStart(row, $event)" @dragend="handleDragEnd" :size="14"><Rank /></el-icon>
               <el-icon :size="20" :color="getFileIconColor(row)"><component :is="getFileIcon(row)" /></el-icon>
               <span class="file-name-text">{{ row.name }}</span>
             </div>
@@ -80,7 +81,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Rank } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -93,6 +94,10 @@ const viewMode = ref('table')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const showUploadDialog = ref(false)
+const draggedItem = ref(null)
+const dragOverId = ref(null)
+const dropSuccessId = ref(null)
+const tableKey = ref(0)
 
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
@@ -132,6 +137,46 @@ async function loadChildren(row, treeNode, resolve) {
       resolve(children)
     }
   } catch { resolve([]) }
+}
+// 拖拽移动
+function handleDragStart(row, event) {
+  draggedItem.value = row
+  event.dataTransfer.effectAllowed = 'move'
+  // 自定义拖拽幽灵
+  const ghost = document.createElement('div')
+  ghost.className = 'drag-ghost'
+  ghost.textContent = row.isDir ? `📁 ${row.name}` : `📄 ${row.name}`
+  document.body.appendChild(ghost)
+  event.dataTransfer.setDragImage(ghost, 20, 14)
+  setTimeout(() => ghost.remove(), 0)
+}
+function handleDragEnd() {
+  draggedItem.value = null
+  dragOverId.value = null
+  if (!dropSuccessId.value) dropSuccessId.value = null
+}
+function handleDragOver(row, event) {
+  event.preventDefault()
+  if (draggedItem.value && draggedItem.value.id !== row.id) {
+    dragOverId.value = row.id
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+function handleDragLeave() {
+  dragOverId.value = null
+}
+async function handleDrop(targetRow, event) {
+  event.preventDefault()
+  dragOverId.value = null
+  const item = draggedItem.value
+  if (!item || item.id === targetRow.id) return
+  if (!targetRow.isDir) return
+  try {
+    await fileApi.update(item.id, { parentId: targetRow.id })
+    dropSuccessId.value = targetRow.id
+    ElMessage.success(`已将「${item.name}」移动到「${targetRow.name}」`)
+    setTimeout(() => { dropSuccessId.value = null; tableKey.value++; reload() }, 400)
+  } catch {}
 }
 function handleSizeChange() { currentPage.value = 1; reload() }
 function handleNavigate(id) { currentPage.value = 1; fileStore.navigateTo(id) }
@@ -249,12 +294,84 @@ function getFileIconColor(file) {
   background-color: #ecf5ff !important;
 }
 
+/* 文件名单元格：平滑过渡 */
+.file-name-cell {
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* 被拖拽行：完全隐藏 */
+.file-name-cell.dragging {
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+/* 拖拽幽灵：跟随鼠标的浮动标签 */
+.drag-ghost {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  padding: 6px 14px;
+  background: var(--cs-primary, #409eff);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.35);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* 拖拽手柄：hover 显示，抓取光标 */
+.drag-handle {
+  cursor: grab;
+  color: #dcdfe6;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+.file-name-cell:hover .drag-handle { opacity: 1; }
+.drag-handle:hover { color: var(--cs-primary, #409eff); }
+.drag-handle:active { cursor: grabbing; }
+
+/* 拖拽放置目标高亮：平滑进入 */
+.file-name-cell.drop-target {
+  background-color: #ecf5ff;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px var(--cs-primary, #409eff);
+  animation: dropPulse 0.6s ease infinite alternate;
+}
+
+@keyframes dropPulse {
+  from { box-shadow: inset 0 0 0 2px var(--cs-primary, #409eff); }
+  to { box-shadow: inset 0 0 0 3px var(--cs-primary, #409eff), 0 0 8px rgba(64, 158, 255, 0.3); }
+}
+
+/* 拖拽放置成功闪烁 */
+@keyframes dropSuccess {
+  0% { background-color: #67c23a33; }
+  100% { background-color: transparent; }
+}
+.file-name-cell.drop-success {
+  animation: dropSuccess 0.6s ease;
+}
+
+/* 层级递进偏移：每深一层文件名右移 */
+.file-table :deep(.el-table__row--level-1) .file-name-cell { padding-left: 20px; }
+.file-table :deep(.el-table__row--level-2) .file-name-cell { padding-left: 40px; }
+.file-table :deep(.el-table__row--level-3) .file-name-cell { padding-left: 60px; }
+.file-table :deep(.el-table__row--level-4) .file-name-cell { padding-left: 80px; }
+.file-table :deep(.el-table__row--level-5) .file-name-cell { padding-left: 100px; }
+.file-table :deep(.el-table__row--level-1) .empty-folder-tip { padding-left: 74px; }
+.file-table :deep(.el-table__row--level-2) .empty-folder-tip { padding-left: 94px; }
+.file-table :deep(.el-table__row--level-3) .empty-folder-tip { padding-left: 114px; }
+
 /* 空文件夹提示行 */
 .empty-folder-tip {
   color: #c0c4cc;
   font-size: 13px;
   font-style: italic;
-  padding-left: 4px;
+  padding-left: 54px;
   cursor: default;
 }
 

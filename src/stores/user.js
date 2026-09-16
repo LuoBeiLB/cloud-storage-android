@@ -7,7 +7,8 @@ export const useUserStore = defineStore('user', () => {
   const username = ref(localStorage.getItem('cs-username') || '')
   const role = ref(localStorage.getItem('cs-role') || 'user')
   const userId = ref(localStorage.getItem('cs-user-id') || '')
-  const quota = ref({ used: 0, total: 0 })
+  const savedQuota = localStorage.getItem('cs-quota')
+  const quota = ref(savedQuota ? JSON.parse(savedQuota) : { used: 0, total: 0 })
   // 强制改密标志：后端 mustChangePassword 为 true（新账号初始密码 / 管理员重置密码后）时布局层弹出不可关闭的改密弹框，false 不拦截
   const mustChangePwd = ref(localStorage.getItem('cs-must-change-pwd') === '1')
 
@@ -24,6 +25,7 @@ export const useUserStore = defineStore('user', () => {
     role.value = u.role || 'user'
     userId.value = u.id != null ? String(u.id) : ''
     quota.value = { used: u.usedBytes || 0, total: u.quotaBytes || 0 }
+    localStorage.setItem('cs-quota', JSON.stringify(quota.value))
     localStorage.setItem('cs-token', data.accessToken || '')
     localStorage.setItem('cs-refresh-token', data.refreshToken || '')
     localStorage.setItem('cs-username', u.username || '')
@@ -40,6 +42,7 @@ export const useUserStore = defineStore('user', () => {
     role.value = p.role || role.value
     userId.value = p.id != null ? String(p.id) : userId.value
     quota.value = { used: p.usedBytes || 0, total: p.quotaBytes || 0 }
+    localStorage.setItem('cs-quota', JSON.stringify(quota.value))
     if (p.mustChangePassword != null) setMustChangeFlag(!!p.mustChangePassword)
   }
 
@@ -48,7 +51,7 @@ export const useUserStore = defineStore('user', () => {
     token.value = ''; username.value = ''; role.value = 'user'; userId.value = ''
     quota.value = { used: 0, total: 0 }
     mustChangePwd.value = false
-    ;['cs-token', 'cs-refresh-token', 'cs-user-id', 'cs-username', 'cs-role', 'cs-must-change-pwd'].forEach(k => localStorage.removeItem(k))
+    ;['cs-token', 'cs-refresh-token', 'cs-user-id', 'cs-username', 'cs-role', 'cs-must-change-pwd', 'cs-quota'].forEach(k => localStorage.removeItem(k))
   }
 
   return { token, username, role, userId, quota, mustChangePwd, login, logout, loadProfile, setMustChangeFlag }
