@@ -3,7 +3,7 @@
     <h2 class="page-title"><el-icon><Document /></el-icon>审计日志</h2>
     <div class="toolbar cs-card" style="padding: 16px 20px; margin-bottom: 20px;">
       <div class="filter-row">
-        <el-input v-model="filters.userId" placeholder="用户ID" clearable style="width: 140px" :prefix-icon="User" @input="v => filters.userId = v.replace(/\D/g, '')" />
+        <el-input v-model="filters.username" placeholder="操作人名称" clearable style="width: 160px" :prefix-icon="User" />
         <el-select v-model="filters.action" placeholder="动作类型" clearable style="width: 160px">
           <el-option-group label="用户操作">
             <el-option label="登录" value="login" /><el-option label="登出" value="logout" /><el-option label="上传" value="upload" />
@@ -71,16 +71,19 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
-const filters = ref({ userId: '', action: '', dateRange: null })
+const filters = ref({ username: '', action: '', dateRange: null })
 // 用户ID → 用户名映射（审计日志只带 userId，用用户列表补全显示）
 const userMap = ref({})
+// 用户名 → ID 反向映射（筛选用）
+const nameToIdMap = ref({})
 
 onMounted(() => {
   loadLogs()
   adminApi.listUsers({ page: 1, size: 100 }).then(res => {
-    const m = {}
-    ;(res.content || []).forEach(u => { m[u.id] = u.username })
+    const m = {}, rev = {}
+    ;(res.content || []).forEach(u => { m[u.id] = u.username; rev[u.username] = u.id })
     userMap.value = m
+    nameToIdMap.value = rev
   }).catch(() => {})
 })
 
@@ -88,8 +91,11 @@ async function loadLogs() {
   loading.value = true
   try {
     const params = { page: currentPage.value, size: pageSize.value }
-    const uid = parseInt(filters.value.userId)
-    if (!isNaN(uid) && uid > 0) params.userId = uid
+    if (filters.value.username) {
+      const uid = nameToIdMap.value[filters.value.username]
+      if (uid) params.userId = uid
+      else { params.userId = -1 } // 用户不存在，让后端返回空结果
+    }
     if (filters.value.action) params.action = filters.value.action
     if (filters.value.dateRange && filters.value.dateRange.length === 2) {
       const [s, e] = filters.value.dateRange
@@ -108,7 +114,7 @@ async function loadLogs() {
 
 function handleSearch() { currentPage.value = 1; loadLogs() }
 function handleSizeChange() { currentPage.value = 1; loadLogs() }
-function handleReset() { filters.value = { userId: '', action: '', dateRange: null }; currentPage.value = 1; loadLogs() }
+function handleReset() { filters.value = { username: '', action: '', dateRange: null }; currentPage.value = 1; loadLogs() }
 
 // 后端实际动作值为小写（login / mkdir / user_manage 等），未收录的显示原文
 const actionMap = { login: '登录', logout: '登出', upload: '上传', download: '下载', delete: '删除', restore: '恢复', mkdir: '新建文件夹', create_folder: '新建文件夹', rename: '重命名', move: '移动', share: '分享', user_manage: '用户管理' }
