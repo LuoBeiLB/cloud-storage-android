@@ -22,6 +22,9 @@
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
+        <el-table-column label="需改密" width="100">
+          <template #default="{ row }"><el-tag :type="row.mustChangePassword ? 'warning' : 'success'" size="small">{{ row.mustChangePassword ? '是' : '否' }}</el-tag></template>
+        </el-table-column>
         <el-table-column label="配额使用" width="200">
           <template #default="{ row }">
             <div class="quota-cell">

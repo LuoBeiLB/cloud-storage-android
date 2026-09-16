@@ -6,13 +6,12 @@
         <el-input v-model="filters.userId" placeholder="用户ID" clearable style="width: 140px" :prefix-icon="User" @input="v => filters.userId = v.replace(/\D/g, '')" />
         <el-select v-model="filters.action" placeholder="动作类型" clearable style="width: 160px">
           <el-option-group label="用户操作">
-            <el-option label="登录" value="LOGIN" /><el-option label="登出" value="LOGOUT" /><el-option label="上传" value="UPLOAD" />
-            <el-option label="下载" value="DOWNLOAD" /><el-option label="删除" value="DELETE" /><el-option label="恢复" value="RESTORE" />
-            <el-option label="新建文件夹" value="CREATE_FOLDER" /><el-option label="重命名" value="RENAME" /><el-option label="移动" value="MOVE" />
+            <el-option label="登录" value="login" /><el-option label="登出" value="logout" /><el-option label="上传" value="upload" />
+            <el-option label="下载" value="download" /><el-option label="删除" value="delete" /><el-option label="恢复" value="restore" />
+            <el-option label="新建文件夹" value="mkdir" /><el-option label="重命名" value="rename" /><el-option label="移动" value="move" />
           </el-option-group>
           <el-option-group label="管理操作">
-            <el-option label="创建用户" value="ADMIN_CREATE_USER" /><el-option label="禁用用户" value="ADMIN_DISABLE_USER" />
-            <el-option label="调整配额" value="ADMIN_UPDATE_QUOTA" /><el-option label="重置密码" value="ADMIN_RESET_PASSWORD" />
+            <el-option label="用户管理操作" value="user_manage" />
           </el-option-group>
         </el-select>
         <el-date-picker v-model="filters.dateRange" type="daterange" range-separator="-" start-placeholder="开始日期" end-placeholder="结束日期" style="width: 260px" />
@@ -28,12 +27,12 @@
               <h4>详细信息</h4>
               <el-descriptions :column="2" border size="small">
                 <el-descriptions-item label="日志ID">{{ row.id }}</el-descriptions-item>
-                <el-descriptions-item label="操作人ID">{{ row.userId }}</el-descriptions-item>
+                <el-descriptions-item label="操作人">{{ userMap[row.userId] ? userMap[row.userId] + '（ID ' + row.userId + '）' : 'ID ' + row.userId }}</el-descriptions-item>
                 <el-descriptions-item label="动作">{{ actionLabel(row.action) }}</el-descriptions-item>
-                <el-descriptions-item label="目标">{{ row.target || '--' }}</el-descriptions-item>
+                <el-descriptions-item label="目标">{{ targetLabel(row) }}</el-descriptions-item>
                 <el-descriptions-item label="IP地址">{{ row.ip || '--' }}</el-descriptions-item>
                 <el-descriptions-item label="时间">{{ formatDate(row.createdAt) }}</el-descriptions-item>
-                <el-descriptions-item label="详情" :span="2">{{ row.detail || '--' }}</el-descriptions-item>
+                <el-descriptions-item label="详情" :span="2"><pre class="detail-pre">{{ detailText(row) }}</pre></el-descriptions-item>
               </el-descriptions>
             </div>
           </template>
@@ -42,13 +41,13 @@
           <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
         </el-table-column>
         <el-table-column prop="userId" label="操作人" width="120">
-          <template #default="{ row }"><span class="user-cell">用户 {{ row.userId }}</span></template>
+          <template #default="{ row }"><span class="user-cell">{{ userMap[row.userId] || ('用户 ' + row.userId) }}</span></template>
         </el-table-column>
         <el-table-column prop="action" label="动作" width="140">
           <template #default="{ row }"><el-tag size="small" :type="actionTagType(row.action)">{{ actionLabel(row.action) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="target" label="目标" min-width="200">
-          <template #default="{ row }">{{ row.target || '--' }}</template>
+          <template #default="{ row }">{{ targetLabel(row) }}</template>
         </el-table-column>
         <el-table-column prop="ip" label="IP" width="140">
           <template #default="{ row }">{{ row.ip || '--' }}</template>
@@ -64,7 +63,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { Search, User } from '@element-plus/icons-vue'
-import { auditApi } from '@/api'
+import { auditApi, adminApi } from '@/api'
 import { formatDate } from '@/utils/file'
 
 const logs = ref([])
@@ -73,8 +72,17 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
 const filters = ref({ userId: '', action: '', dateRange: null })
+// 用户ID → 用户名映射（审计日志只带 userId，用用户列表补全显示）
+const userMap = ref({})
 
-onMounted(() => loadLogs())
+onMounted(() => {
+  loadLogs()
+  adminApi.listUsers({ page: 1, size: 100 }).then(res => {
+    const m = {}
+    ;(res.content || []).forEach(u => { m[u.id] = u.username })
+    userMap.value = m
+  }).catch(() => {})
+})
 
 async function loadLogs() {
   loading.value = true
@@ -102,9 +110,20 @@ function handleSearch() { currentPage.value = 1; loadLogs() }
 function handleSizeChange() { currentPage.value = 1; loadLogs() }
 function handleReset() { filters.value = { userId: '', action: '', dateRange: null }; currentPage.value = 1; loadLogs() }
 
-const actionMap = { LOGIN:'登录',LOGOUT:'登出',UPLOAD:'上传',DOWNLOAD:'下载',DELETE:'删除',RESTORE:'恢复',CREATE_FOLDER:'新建文件夹',RENAME:'重命名',MOVE:'移动',SHARE:'分享',ADMIN_CREATE_USER:'创建用户',ADMIN_DISABLE_USER:'禁用用户',ADMIN_UPDATE_QUOTA:'调整配额',ADMIN_RESET_PASSWORD:'重置密码' }
-function actionLabel(a) { return actionMap[a] || a }
-function actionTagType(a) { if (!a) return 'info'; if (a.startsWith('ADMIN_')) return 'warning'; if (['DELETE','LOGOUT'].includes(a)) return 'info'; return '' }
+// 后端实际动作值为小写（login / mkdir / user_manage 等），未收录的显示原文
+const actionMap = { login: '登录', logout: '登出', upload: '上传', download: '下载', delete: '删除', restore: '恢复', mkdir: '新建文件夹', create_folder: '新建文件夹', rename: '重命名', move: '移动', share: '分享', user_manage: '用户管理' }
+function actionLabel(a) { return actionMap[String(a || '').toLowerCase()] || a }
+function actionTagType(a) { const k = String(a || '').toLowerCase(); if (!k) return 'info'; if (k === 'user_manage') return 'warning'; if (['delete', 'logout'].includes(k)) return 'info'; if (k === 'login') return 'success'; return '' }
+// detail 是 JSON 字符串，格式化后展示；target 优先取 detail 里的 name（如目录名）
+function detailText(row) {
+  if (!row.detail) return '--'
+  try { return JSON.stringify(JSON.parse(row.detail), null, 2) } catch { return row.detail }
+}
+function targetLabel(row) {
+  if (row.target == null || row.target === '') return '--'
+  try { const o = JSON.parse(row.detail); if (o && o.name) return o.name } catch {}
+  return row.target
+}
 </script>
 
 <style scoped>
@@ -112,6 +131,7 @@ function actionTagType(a) { if (!a) return 'info'; if (a.startsWith('ADMIN_')) r
 .expand-detail { padding: 16px 24px; }
 .expand-detail h4 { font-size: 14px; font-weight: 600; color: var(--cs-text-primary); margin: 0 0 12px 0; }
 .user-cell { color: var(--cs-text-secondary); }
+.detail-pre { white-space: pre-wrap; word-break: break-all; margin: 0; font-family: inherit; font-size: 13px; color: var(--cs-text-secondary); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; }
 .table-card { overflow-x: auto; }
 .filter-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
