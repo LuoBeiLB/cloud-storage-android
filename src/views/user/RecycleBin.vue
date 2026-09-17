@@ -2,7 +2,10 @@
   <div class="cs-page">
     <div class="breadcrumb-bar">
       <h2 class="page-title"><el-icon><Delete /></el-icon>回收站</h2>
-      <el-tag type="info">30 天后自动清理</el-tag>
+      <div class="recycle-actions">
+        <el-tag type="info">30 天后自动清理</el-tag>
+        <el-button v-if="total > 0" type="danger" plain :loading="clearing" @click="handleClearTrash"><el-icon><Delete /></el-icon><span>清空回收站</span></el-button>
+      </div>
     </div>
     <div class="cs-card table-card">
       <el-table :data="recycleFiles" v-loading="loading" style="width: 100%; min-width: 760px">
@@ -46,7 +49,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileApi } from '@/api'
 import { mapFileNode, formatSize, formatDate } from '@/utils/file'
 
@@ -55,6 +58,7 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
+const clearing = ref(false)
 
 onMounted(() => loadTrash())
 
@@ -84,12 +88,41 @@ function handlePermanentDelete(row) {
   fileApi.remove(row.id, 1).then(() => { ElMessage.success('已彻底删除'); loadTrash() }).catch(() => {})
 }
 
+// 清空回收站：分页拉取全部项后逐个彻底删除
+async function handleClearTrash() {
+  try {
+    await ElMessageBox.confirm('确定清空回收站吗？所有文件将被彻底删除且无法恢复。', '清空回收站', { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' })
+  } catch (e) { return }
+  clearing.value = true
+  try {
+    const size = 100
+    let page = 1
+    const ids = []
+    while (true) {
+      const res = await fileApi.trash({ page, size })
+      const list = res.list || []
+      ids.push(...list.map(f => f.id))
+      if (ids.length >= (res.total || 0) || list.length < size) break
+      page++
+    }
+    if (ids.length === 0) { ElMessage.info('回收站现在已为空'); return }
+    const results = await Promise.allSettled(ids.map(id => fileApi.remove(id, 1)))
+    const ok = results.filter(x => x.status === 'fulfilled').length
+    const fail = results.length - ok
+    if (fail === 0) ElMessage.success('已清空回收站（' + ok + ' 项）')
+    else ElMessage.warning('已彻底删除 ' + ok + ' 项，' + fail + ' 项失败')
+    currentPage.value = 1
+    loadTrash()
+  } catch (e) { /* 拦截器已提示 */ } finally { clearing.value = false }
+}
+
 function getFileIcon(file) { const m = { folder:'Folder',pdf:'Document',image:'Picture',text:'Notebook',archive:'Files' }; return m[file.type] || 'Document' }
 function getFileIconColor(file) { const m = { folder:'#faad14',pdf:'#ff4d4f',image:'#52c41a',text:'#595959',archive:'#8c8c8c' }; return m[file.type] || '#8c8c8c' }
 </script>
 
 <style scoped>
 .page-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--cs-text-primary); margin: 0; }
+.recycle-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .file-name-cell { display: flex; align-items: center; gap: 8px; }
 .expire-text { color: var(--cs-warning); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; }
