@@ -71,10 +71,12 @@
       <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]" :total="fileStore.total" layout="total, sizes, prev, pager, next" background @current-change="reload" @size-change="handleSizeChange" />
     </div>
     <el-dialog v-model="showUploadDialog" title="上传文件" width="min(520px, 92vw)" destroy-on-close>
-      <el-upload drag multiple action="#" :auto-upload="false">
+      <el-upload drag multiple :http-request="doUpload" :show-file-list="true">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
-        <template #tip><div class="el-upload__tip">上传接口待后端开放，当前暂不可用</div></template>
+        <template #tip>
+          <div class="el-upload__tip">支持秒传与大文件分片上传，将上传到「{{ currentDirName }}」</div>
+        </template>
       </el-upload>
     </el-dialog>
     <el-dialog v-model="showMoveDialog" title="移动到" width="min(480px, 92vw)" destroy-on-close>
@@ -96,6 +98,8 @@ import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatSize, formatDate, mapFileNode } from '@/utils/file'
+import { uploadApi } from '@/api'
+import { uploadFile } from '@/utils/upload'
 
 const fileStore = useFileStore()
 const searchText = ref('')
@@ -133,6 +137,12 @@ const filteredFiles = computed(() => {
     return new Date(b.updatedAt) - new Date(a.updatedAt)
   })
   return list
+})
+
+// 当前目录名（面包屑末项，用于展示上传目标）
+const currentDirName = computed(() => {
+  const bc = fileStore.breadcrumb
+  return bc.length ? bc[bc.length - 1].name : '全部文件'
 })
 
 function reload() { fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value) }
@@ -258,21 +268,51 @@ function handleOpen(row) {
   if (row.isDir) { handleNavigate(row.id) }
   else ElMessage.info('在线预览待后端接口支持')
 }
+
+// el-upload 自定义上传：分片上传 + 秒传 + 断点续传
+function doUpload(options) {
+  // 注意：element-plus http-request 的 options.file 就是原始 File（带 uid），没有 .raw 属性
+  const raw = options.file
+  const name = raw?.name || '未命名文件'
+  if (!raw) {
+    ElMessage.error('读取文件失败，请重新选择')
+    options.onError(new Error('empty file'))
+    return
+  }
+  const parentId = fileStore.currentParentId ?? 0
+  uploadFile(raw, parentId, ({ phase, percent }) => {
+    // 哈希阶段(本地计算指纹，不发网络请求)映射 0-30%，分片上传映射 30-100%
+    const total = phase === 'hash' ? Math.round(percent * 0.3) : 30 + Math.round(percent * 0.7)
+    options.onProgress({ percent: total })
+  })
+    .then(res => {
+      options.onSuccess(res)
+      ElMessage.success(res.instant ? `「${name}」秒传成功` : `「${name}」上传成功`)
+      reload()
+    })
+    .catch(err => {
+      // 具体错误已由 request 拦截器统一 toast
+      options.onError(err)
+    })
+}
+
 async function handleDownload(row) {
-  if (row.isDir) return ElMessage.warning('文件夹暂不支持下载')
+  if (row.isDir) { ElMessage.warning('文件夹暂不支持下载'); return }
   try {
-    const res = await fileApi.download(row.id)
-    const url = res?.url || res?.downloadUrl || ''
-    if (!url) return ElMessage.warning('下载链接为空')
+    const { url } = await uploadApi.getDownloadUrl(row.id)
+    // 预签名 URL（5 分钟有效）为跨域直链，用 a 标签触发；
+    // download 属性在同源时生效，跨域时浏览器会按后端响应头（Content-Disposition）决定下载还是预览
     const a = document.createElement('a')
     a.href = url
-    a.download = res?.filename || res?.fileName || row.name
+    a.download = row.name
     a.target = '_blank'
+    a.rel = 'noopener'
     document.body.appendChild(a)
     a.click()
     a.remove()
-    ElMessage.success(`开始下载「${row.name}」`)
-  } catch {}
+  } catch (e) {
+    // 错误已由拦截器统一提示
+  }
 }
 
 function handleDelete(id) {
