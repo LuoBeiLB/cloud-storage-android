@@ -9,6 +9,7 @@ export function extToType(name) {
     xls: 'excel', xlsx: 'excel', csv: 'excel',
     ppt: 'ppt', pptx: 'ppt',
     mp4: 'video', avi: 'video', mov: 'video', mkv: 'video', webm: 'video',
+    mp3: 'audio', wav: 'audio', flac: 'audio', ogg: 'audio', m4a: 'audio', aac: 'audio',
     zip: 'archive', rar: 'archive', '7z': 'archive', tar: 'archive', gz: 'archive',
     md: 'text', txt: 'text', log: 'text', json: 'text', xml: 'text'
   }

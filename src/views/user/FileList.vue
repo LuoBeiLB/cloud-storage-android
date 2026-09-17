@@ -1,12 +1,15 @@
 <template>
   <div class="cs-page">
     <div class="breadcrumb-bar">
-      <el-breadcrumb separator="/">
-        <el-breadcrumb-item><el-icon><HomeFilled /></el-icon></el-breadcrumb-item>
-        <el-breadcrumb-item v-for="item in fileStore.breadcrumb" :key="item.id">
-          <a @click.prevent="handleNavigate(item.id)">{{ item.name }}</a>
-        </el-breadcrumb-item>
-      </el-breadcrumb>
+      <div class="breadcrumb-left">
+        <el-button class="back-btn" :disabled="!canGoUp" @click="goUp" title="返回上一级"><el-icon><Back /></el-icon><span>上一级</span></el-button>
+        <el-breadcrumb separator="/">
+          <el-breadcrumb-item><el-icon><HomeFilled /></el-icon></el-breadcrumb-item>
+          <el-breadcrumb-item v-for="item in fileStore.breadcrumb" :key="item.id">
+            <a @click.prevent="handleNavigate(item.id)">{{ item.name }}</a>
+          </el-breadcrumb-item>
+        </el-breadcrumb>
+      </div>
       <div class="breadcrumb-actions">
         <el-button type="primary" @click="openUploadDialog"><el-icon><UploadFilled /></el-icon><span>上传文件</span></el-button>
         <el-button @click="handleNewFolder"><el-icon><FolderAdd /></el-icon><span>新建文件夹</span></el-button>
@@ -106,6 +109,17 @@
         <el-button type="primary" :loading="moveLoading" :disabled="moveTargetId == null" @click="confirmBatchMove">确定移动</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="previewVisible" :title="previewFile?.name || '在线预览'" width="min(920px, 94vw)" top="5vh" destroy-on-close @closed="closePreview">
+      <div v-loading="previewLoading" class="preview-body">
+        <div v-if="previewType === 'image'" class="preview-image-wrap">
+          <img :src="previewUrl" :alt="previewFile?.name" />
+        </div>
+        <iframe v-else-if="previewType === 'pdf'" :src="previewUrl" class="preview-iframe" title="PDF 预览" />
+        <video v-else-if="previewType === 'video'" :src="previewUrl" controls class="preview-media" />
+        <audio v-else-if="previewType === 'audio'" :src="previewUrl" controls class="preview-audio" />
+        <pre v-else-if="previewType === 'text'" class="preview-text">{{ previewText }}</pre>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -147,6 +161,14 @@ const folderTreeData = ref([])
 const moveTargetId = ref(null)
 const moveTreeLoading = ref(false)
 const moveLoading = ref(false)
+
+// 在线预览状态
+const previewVisible = ref(false)
+const previewFile = ref(null)
+const previewType = ref('')
+const previewUrl = ref('')
+const previewText = ref('')
+const previewLoading = ref(false)
 
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
@@ -300,9 +322,73 @@ async function confirmBatchMove() {
 function handleSizeChange() { currentPage.value = 1; reload() }
 function handleNavigate(id) { currentPage.value = 1; fileStore.navigateTo(id) }
 
+// 返回上一级：breadcrumb = [全部文件(0), 一级, ..., 当前]，倒数第二项即上一级
+const canGoUp = computed(() => fileStore.breadcrumb.length > 1)
+function goUp() {
+  if (!canGoUp.value) return
+  const parent = fileStore.breadcrumb[fileStore.breadcrumb.length - 2]
+  handleNavigate(parent ? parent.id : 0)
+}
+
 function handleOpen(row) {
-  if (row.isDir) { handleNavigate(row.id) }
-  else ElMessage.info('在线预览待后端接口支持')
+  if (row.isDir) { handleNavigate(row.id); return }
+  openPreview(row)
+}
+
+// 在线预览：复用下载预签名 URL，按文件类型渲染
+async function openPreview(row) {
+  const type = row.type
+  if (type === 'word' || type === 'excel' || type === 'ppt') {
+    ElMessage.info('Office 文档预览需后端转码支持（已列入后端需求），暂可下载查看')
+    return
+  }
+  if (type === 'archive') {
+    ElMessage.info('压缩包暂不支持在线预览，请下载后查看')
+    return
+  }
+  previewFile.value = row
+  previewType.value = type
+  previewUrl.value = ''
+  previewText.value = ''
+  previewVisible.value = true
+  if (type === 'text') await loadTextPreview(row)
+  else await loadUrlPreview(row)
+}
+
+// 图片 / PDF / 视频 / 音频：拿预签名 URL 直接渲染
+async function loadUrlPreview(row) {
+  previewLoading.value = true
+  try {
+    const { url } = await uploadApi.getDownloadUrl(row.id)
+    previewUrl.value = url
+  } catch (e) {
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+// 文本：需跨域 fetch 内容（依赖后端 / MinIO 配置 CORS）
+async function loadTextPreview(row) {
+  previewLoading.value = true
+  try {
+    const { url } = await uploadApi.getDownloadUrl(row.id)
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error('HTTP ' + resp.status)
+    previewText.value = await resp.text()
+  } catch (e) {
+    ElMessage.error('文本预览失败（可能是跨域限制），请下载后查看')
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function closePreview() {
+  previewUrl.value = ''
+  previewText.value = ''
+  previewFile.value = null
+  previewType.value = ''
 }
 
 // 打开上传对话框：加载目录树，默认选中「全部文件」（根目录）
@@ -456,11 +542,11 @@ function handleNewFolder() {
 }
 
 function getFileIcon(file) {
-  const m = { folder:'Folder',pdf:'Document',image:'Picture',word:'Document',excel:'Grid',ppt:'Monitor',video:'VideoCamera',archive:'Files',text:'Notebook' }
+  const m = { folder:'Folder',pdf:'Document',image:'Picture',word:'Document',excel:'Grid',ppt:'Monitor',video:'VideoCamera',audio:'Headset',archive:'Files',text:'Notebook' }
   return m[file.type] || 'Document'
 }
 function getFileIconColor(file) {
-  const m = { folder:'#faad14',pdf:'#ff4d4f',image:'#52c41a',word:'#1677ff',excel:'#52c41a',ppt:'#fa8c16',video:'#722ed1',archive:'#8c8c8c',text:'#595959' }
+  const m = { folder:'#faad14',pdf:'#ff4d4f',image:'#52c41a',word:'#1677ff',excel:'#52c41a',ppt:'#fa8c16',video:'#722ed1',audio:'#13c2c2',archive:'#8c8c8c',text:'#595959' }
   return m[file.type] || '#8c8c8c'
 }
 </script>
@@ -488,6 +574,11 @@ function getFileIconColor(file) {
 .toolbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .search-input { width: 240px; }
 .sort-select { width: 140px; }
+
+/* 面包屑左侧：返回上一级 + 面包屑 */
+.breadcrumb-left { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.breadcrumb-left .back-btn { margin-right: 4px; }
+.breadcrumb-left .el-breadcrumb { white-space: nowrap; }
 
 /* 面包屑右侧按钮 */
 .breadcrumb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -620,6 +711,15 @@ function getFileIconColor(file) {
   display: flex;
   align-items: center;
 }
+
+/* ===== 在线预览 ===== */
+.preview-body { min-height: 320px; display: flex; align-items: center; justify-content: center; }
+.preview-image-wrap { width: 100%; display: flex; align-items: center; justify-content: center; }
+.preview-image-wrap img { max-width: 100%; max-height: 72vh; object-fit: contain; }
+.preview-iframe { width: 100%; height: 72vh; border: none; border-radius: 6px; }
+.preview-media { width: 100%; max-height: 72vh; border-radius: 6px; }
+.preview-audio { width: 100%; margin-top: 40px; }
+.preview-text { width: 100%; min-height: 320px; max-height: 72vh; margin: 0; padding: 16px; overflow: auto; background: rgba(0, 0, 0, 0.04); border-radius: 6px; font-family: 'Consolas', 'Menlo', 'Monaco', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; text-align: left; }
 
 @media (max-width: 768px) {
   .breadcrumb-bar { flex-wrap: wrap; gap: 12px; }
