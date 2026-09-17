@@ -2,7 +2,10 @@
   <div class="cs-page">
     <div class="breadcrumb-bar">
       <h2 class="page-title"><el-icon><Delete /></el-icon>回收站</h2>
-      <el-tag type="info">30 天后自动清理</el-tag>
+      <div class="trash-actions">
+        <el-tag type="info">30 天后自动清理</el-tag>
+        <el-button type="danger" plain :loading="clearing" :disabled="total === 0" @click="handleClearTrash">清空回收站</el-button>
+      </div>
     </div>
     <div class="cs-card table-card">
       <el-table :data="recycleFiles" v-loading="loading" style="width: 100%; min-width: 760px">
@@ -46,7 +49,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileApi } from '@/api'
 import { mapFileNode, formatSize, formatDate } from '@/utils/file'
 
@@ -55,6 +58,7 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
+const clearing = ref(false)
 
 onMounted(() => loadTrash())
 
@@ -84,12 +88,34 @@ function handlePermanentDelete(row) {
   fileApi.remove(row.id, 1).then(() => { ElMessage.success('已彻底删除'); loadTrash() }).catch(() => {})
 }
 
+// 一键清空回收站：彻底删除所有顶层被删节点
+async function handleClearTrash() {
+  try {
+    await ElMessageBox.confirm('确定清空回收站吗？所有内容将被彻底删除且无法恢复。', '清空回收站', { confirmButtonText: '确定清空', cancelButtonText: '取消', type: 'warning' })
+  } catch (e) { return }
+  clearing.value = true
+  try {
+    const res = await fileApi.trash({ page: 1, size: 1000 })
+    const items = res.list || []
+    if (items.length === 0) { ElMessage.info('回收站已为空'); return }
+    const results = await Promise.allSettled(items.map(f => fileApi.remove(f.id, 1)))
+    const ok = results.filter(r => r.status === 'fulfilled').length
+    const fail = results.length - ok
+    if (fail === 0) ElMessage.success('已彻底删除 ' + ok + ' 项')
+    else ElMessage.warning('已删除 ' + ok + ' 项，' + fail + ' 项失败')
+    loadTrash()
+  } catch (e) { /* 拦截器已提示 */ } finally { clearing.value = false }
+}
+
+
+
 function getFileIcon(file) { const m = { folder:'Folder',pdf:'Document',image:'Picture',text:'Notebook',archive:'Files' }; return m[file.type] || 'Document' }
 function getFileIconColor(file) { const m = { folder:'#faad14',pdf:'#ff4d4f',image:'#52c41a',text:'#595959',archive:'#8c8c8c' }; return m[file.type] || '#8c8c8c' }
 </script>
 
 <style scoped>
 .page-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--cs-text-primary); margin: 0; }
+.trash-actions { display: flex; align-items: center; gap: 12px; }
 .file-name-cell { display: flex; align-items: center; gap: 8px; }
 .expire-text { color: var(--cs-warning); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; }
