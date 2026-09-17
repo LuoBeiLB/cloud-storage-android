@@ -8,7 +8,7 @@
         </el-breadcrumb-item>
       </el-breadcrumb>
       <div class="breadcrumb-actions">
-        <el-button type="primary" @click="showUploadDialog = true"><el-icon><UploadFilled /></el-icon><span>上传文件</span></el-button>
+        <el-button type="primary" @click="openUploadDialog"><el-icon><UploadFilled /></el-icon><span>上传文件</span></el-button>
         <el-button @click="handleNewFolder"><el-icon><FolderAdd /></el-icon><span>新建文件夹</span></el-button>
         <el-button v-if="selectedRows.length > 0" type="warning" @click="openMoveDialog"><el-icon><FolderOpened /></el-icon><span>移动到（{{ selectedRows.length }}）</span></el-button>
       </div>
@@ -71,11 +71,27 @@
       <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]" :total="fileStore.total" layout="total, sizes, prev, pager, next" background @current-change="reload" @size-change="handleSizeChange" />
     </div>
     <el-dialog v-model="showUploadDialog" title="上传文件" width="min(520px, 92vw)" destroy-on-close>
+      <div class="upload-target">
+        <div class="upload-target__label">上传到目录（默认「全部文件」）</div>
+        <div v-loading="uploadTreeLoading" class="upload-target__tree">
+          <el-tree
+            ref="uploadTreeRef"
+            :data="uploadTreeData"
+            :props="{ label: 'label', children: 'children' }"
+            node-key="id"
+            highlight-current
+            :expand-on-click-node="false"
+            default-expand-all
+            empty-text="暂无目录，默认上传到全部文件"
+            @node-click="handleUploadNodeClick"
+          />
+        </div>
+      </div>
       <el-upload drag multiple :http-request="doUpload" :show-file-list="true">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
         <template #tip>
-          <div class="el-upload__tip">支持秒传与大文件分片上传，将上传到「{{ currentDirName }}」</div>
+          <div class="el-upload__tip">将上传到「{{ uploadTargetName }}」；支持秒传与大文件分片上传</div>
         </template>
       </el-upload>
     </el-dialog>
@@ -92,7 +108,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { Search, Rank, FolderOpened } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api'
@@ -108,6 +124,11 @@ const viewMode = ref('table')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const showUploadDialog = ref(false)
+const uploadTreeRef = ref(null)
+const uploadTreeData = ref([])
+const uploadTreeLoading = ref(false)
+const uploadTargetId = ref(0)
+const uploadTargetName = ref('全部文件')
 const draggedItem = ref(null)
 const dragOverId = ref(null)
 const dropSuccessId = ref(null)
@@ -137,12 +158,6 @@ const filteredFiles = computed(() => {
     return new Date(b.updatedAt) - new Date(a.updatedAt)
   })
   return list
-})
-
-// 当前目录名（面包屑末项，用于展示上传目标）
-const currentDirName = computed(() => {
-  const bc = fileStore.breadcrumb
-  return bc.length ? bc[bc.length - 1].name : '全部文件'
 })
 
 function reload() { fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value) }
@@ -269,6 +284,30 @@ function handleOpen(row) {
   else ElMessage.info('在线预览待后端接口支持')
 }
 
+// 打开上传对话框：加载目录树，默认选中「全部文件」（根目录）
+async function openUploadDialog() {
+  showUploadDialog.value = true
+  uploadTargetId.value = 0
+  uploadTargetName.value = '全部文件'
+  uploadTreeLoading.value = true
+  try {
+    const list = await fileApi.tree()
+    uploadTreeData.value = buildFolderTree(list || [])
+  } catch {
+    uploadTreeData.value = [{ id: 0, label: '全部文件', children: [] }]
+  } finally {
+    uploadTreeLoading.value = false
+    await nextTick()
+    uploadTreeRef.value?.setCurrentKey(0)
+  }
+}
+
+// 选择上传目标目录
+function handleUploadNodeClick(node) {
+  uploadTargetId.value = node.id
+  uploadTargetName.value = node.label
+}
+
 // el-upload 自定义上传：分片上传 + 秒传 + 断点续传
 function doUpload(options) {
   // 注意：element-plus http-request 的 options.file 就是原始 File（带 uid），没有 .raw 属性
@@ -279,7 +318,7 @@ function doUpload(options) {
     options.onError(new Error('empty file'))
     return
   }
-  const parentId = fileStore.currentParentId ?? 0
+  const parentId = uploadTargetId.value ?? 0
   uploadFile(raw, parentId, ({ phase, percent }) => {
     // 哈希阶段(本地计算指纹，不发网络请求)映射 0-30%，分片上传映射 30-100%
     const total = phase === 'hash' ? Math.round(percent * 0.3) : 30 + Math.round(percent * 0.7)
@@ -359,6 +398,11 @@ function getFileIconColor(file) {
 .grid-meta { font-size: 12px; color: var(--cs-text-tertiary); }
 .pagination-bar { display: flex; justify-content: flex-end; margin-top: 20px; padding: 12px 0; }
 .upload-icon { color: var(--cs-primary); margin-bottom: 8px; }
+
+/* 上传对话框：目录选择器 */
+.upload-target { margin-bottom: 16px; }
+.upload-target__label { font-size: 13px; color: #606266; margin-bottom: 6px; }
+.upload-target__tree { max-height: 220px; overflow-y: auto; padding: 2px 6px; border: 1px solid #dcdfe6; border-radius: 6px; }
 
 /* 工具栏：左搜索框、右排序+视图切换，三端统一 flex 排列 */
 .toolbar-left { display: flex; align-items: center; flex: 1; min-width: 0; }
