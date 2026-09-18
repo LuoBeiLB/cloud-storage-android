@@ -473,6 +473,12 @@ function doUpload(options) {
     options.onError(new Error('empty file'))
     return
   }
+  // 单文件上限 10GB（与后端 init 一致），选文件时先拦截，避免对大文件做无谓的 SHA256 计算
+  if (raw.size > 10 * 1024 * 1024 * 1024) {
+    ElMessage.error(`「${name}」超过单文件上传上限 10GB，请选择更小的文件`)
+    options.onError(new Error('file too large'))
+    return
+  }
   const parentId = uploadTargetId.value ?? 0
   let snapId = null
   uploadFile(raw, parentId, {

@@ -23,8 +23,8 @@ export const fileApi = {
   remove: (id, force = 0) => request.delete(`/files/${id}`, { params: { force } }),
   // 回收站列表：{ page, size } → { total, list }
   trash: params => request.get('/files/trash', { params }),
-  // 从回收站还原
-  restore: id => request.post(`/files/${id}/restore`),
+  // 从回收站还原：可选目标目录 targetParentId（0=根目录「全部文件」，缺省=原位置）
+  restore: (id, data) => request.post(`/files/${id}/restore`, data || {}),
   // 下载文件 → Map<string,string>
   download: id => request.get(`/files/${id}/download`),
   // 获取完整目录树（扁平 id+parentId 列表，前端自行建树）
