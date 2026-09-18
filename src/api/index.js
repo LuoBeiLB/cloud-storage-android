@@ -69,5 +69,6 @@ export const uploadApi = {
   // 取消上传
   abort: sessionId => request.post(`/uploads/${sessionId}/abort`),
   // 获取 5 分钟预签名下载地址 → { url }
-  getDownloadUrl: fileId => request.get(`/files/${fileId}/download`)
+  getDownloadUrl: fileId => request.get(`/files/${fileId}/download`),
+  getPreviewUrl: fileId => request.get(`/files/${fileId}/download`, { params: { inline: true } })
 }

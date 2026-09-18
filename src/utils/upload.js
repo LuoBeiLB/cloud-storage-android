@@ -26,14 +26,25 @@ export async function uploadFile(file, parentId, onProgress) {
   const session = await uploadApi.getSession(sessionId)
   const uploaded = new Set(session.uploadedParts || [])
 
-  // 4. 逐片上传（串行，稳定优先；序号从 1 开始）
+  // 4. 分片上传（并发 + 信号量控流；序号从 1 开始，跳过已传分片）
+  const CONCURRENCY = 4
+  const pending = []
   for (let no = 1; no <= totalParts; no++) {
-    if (uploaded.has(no)) continue
-    const start = (no - 1) * chunkSize
-    const end = Math.min(start + chunkSize, file.size)
-    await uploadApi.uploadPart(sessionId, no, file.slice(start, end))
-    onProgress?.({ phase: 'upload', percent: Math.round(no / totalParts * 100) })
+    if (!uploaded.has(no)) pending.push(no)
   }
+  const baseCount = uploaded.size
+  let doneCount = 0
+  async function worker() {
+    while (pending.length > 0) {
+      const no = pending.shift()
+      const start = (no - 1) * chunkSize
+      const end = Math.min(start + chunkSize, file.size)
+      await uploadApi.uploadPart(sessionId, no, file.slice(start, end))
+      doneCount++
+      onProgress?.({ phase: 'upload', percent: Math.round((baseCount + doneCount) / totalParts * 100) })
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, () => worker()))
 
   // 5. 合并分片、落库
   const done = await uploadApi.complete(sessionId)

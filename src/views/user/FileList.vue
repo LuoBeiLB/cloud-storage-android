@@ -118,6 +118,7 @@
         <video v-else-if="previewType === 'video'" :src="previewUrl" controls class="preview-media" />
         <audio v-else-if="previewType === 'audio'" :src="previewUrl" controls class="preview-audio" />
         <pre v-else-if="previewType === 'text'" class="preview-text">{{ previewText }}</pre>
+        <div v-else-if="previewType === 'office'" ref="officeContainer" class="preview-office"></div>
       </div>
     </el-dialog>
   </div>
@@ -169,6 +170,7 @@ const previewType = ref('')
 const previewUrl = ref('')
 const previewText = ref('')
 const previewLoading = ref(false)
+const officeContainer = ref(null)
 
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
@@ -339,7 +341,16 @@ function handleOpen(row) {
 async function openPreview(row) {
   const type = row.type
   if (type === 'word' || type === 'excel' || type === 'ppt') {
-    ElMessage.info('Office 文档预览需后端转码支持（已列入后端需求），暂可下载查看')
+    previewFile.value = row
+    previewType.value = 'office'
+    previewUrl.value = ''
+    previewText.value = ''
+    previewVisible.value = true
+    await previewOffice(row)
+    return
+  }
+  if (type === 'video') {
+    ElMessage.info('视频暂不支持在线预览，请下载后观看')
     return
   }
   if (type === 'archive') {
@@ -359,7 +370,7 @@ async function openPreview(row) {
 async function loadUrlPreview(row) {
   previewLoading.value = true
   try {
-    const { url } = await uploadApi.getDownloadUrl(row.id)
+    const { url } = await uploadApi.getPreviewUrl(row.id)
     previewUrl.value = url
   } catch (e) {
     previewVisible.value = false
@@ -372,7 +383,7 @@ async function loadUrlPreview(row) {
 async function loadTextPreview(row) {
   previewLoading.value = true
   try {
-    const { url } = await uploadApi.getDownloadUrl(row.id)
+    const { url } = await uploadApi.getPreviewUrl(row.id)
     const resp = await fetch(url)
     if (!resp.ok) throw new Error('HTTP ' + resp.status)
     previewText.value = await resp.text()
@@ -389,6 +400,40 @@ function closePreview() {
   previewText.value = ''
   previewFile.value = null
   previewType.value = ''
+}
+
+// Office 在线预览：docx→docx-preview，xlsx/xls→SheetJS；pptx 及旧版 doc/ppt 前端无成熟库，降级下载
+async function previewOffice(row) {
+  previewLoading.value = true
+  try {
+    const ext = (row.name || '').split('.').pop().toLowerCase()
+    if (ext !== 'docx' && ext !== 'xlsx' && ext !== 'xls') {
+      ElMessage.info('该 Office 格式暂不支持在线预览，已为你转为下载')
+      await handleDownload(row)
+      previewVisible.value = false
+      return
+    }
+    const { url } = await uploadApi.getPreviewUrl(row.id)
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error('HTTP ' + resp.status)
+    const container = officeContainer.value
+    if (!container) throw new Error('预览容器未就绪')
+    if (ext === 'docx') {
+      const { renderAsync } = await import('docx-preview')
+      await renderAsync(await resp.blob(), container)
+    } else {
+      const xlsxMod = await import('xlsx')
+      const XLSX = xlsxMod.default || xlsxMod
+      const wb = XLSX.read(await resp.arrayBuffer(), { type: 'array' })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      container.innerHTML = XLSX.utils.sheet_to_html(sheet)
+    }
+  } catch (e) {
+    ElMessage.error('Office 预览失败，请下载后查看')
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
 }
 
 // 打开上传对话框：加载目录树，默认选中「全部文件」（根目录）
@@ -451,8 +496,6 @@ async function handleDownload(row) {
     const a = document.createElement('a')
     a.href = url
     a.download = row.name
-    a.target = '_blank'
-    a.rel = 'noopener'
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -720,6 +763,7 @@ function getFileIconColor(file) {
 .preview-media { width: 100%; max-height: 72vh; border-radius: 6px; }
 .preview-audio { width: 100%; margin-top: 40px; }
 .preview-text { width: 100%; min-height: 320px; max-height: 72vh; margin: 0; padding: 16px; overflow: auto; background: rgba(0, 0, 0, 0.04); border-radius: 6px; font-family: 'Consolas', 'Menlo', 'Monaco', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; text-align: left; }
+.preview-office { width: 100%; min-height: 320px; max-height: 72vh; overflow: auto; padding: 16px 20px; background: #fff; border-radius: 6px; text-align: left; }
 
 @media (max-width: 768px) {
   .breadcrumb-bar { flex-wrap: wrap; gap: 12px; }
