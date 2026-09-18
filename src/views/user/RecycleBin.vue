@@ -19,8 +19,8 @@
         <el-button v-if="selectedRows.length > 0" type="danger" plain :loading="deleting" @click="handleBatchDelete">
           <el-icon><Delete /></el-icon><span>彻底删除（{{ selectedRows.length }}）</span>
         </el-button>
-        <el-button v-if="recycleRoots.length > 0" type="danger" plain :loading="clearing" @click="handleClearTrash">
-          <el-icon><Delete /></el-icon><span>清空回收站</span>
+        <el-button v-if="recycleRoots.length > 0" plain @click="toggleSelectAll">
+          <span>{{ selectAll ? '取消全选' : '全选' }}</span>
         </el-button>
       </div>
     </div>
@@ -112,12 +112,11 @@ const userStore = useUserStore()
 // 回收站数据：全量拉取后本地建树，下钻式浏览（文件夹默认折叠，双击进入子目录）
 const flatMap = ref({})           // id → 节点（含 children）
 const recycleRoots = ref([])     // 顶层节点（回收站根层直接子项）
-const allTrashIds = ref([])      // 全量 id（清空用）
 const currentRecycleDirId = ref(0) // 0 = 回收站根层
 const loading = ref(false)
-const clearing = ref(false)
 const searchText = ref('')
 const selectedRows = ref([])
+const selectAll = ref(false)
 const deleting = ref(false)
 const tableRef = ref(null)
 
@@ -165,7 +164,6 @@ async function loadTrash() {
   loading.value = true
   try {
     const list = await fetchAllTrash()
-    allTrashIds.value = list.map(f => f.id)
     const mapped = list.map(f => mapFileNode(f, { deletedAt: f.deletedAt || f.updatedAt, expireAt: f.expireAt || null }))
     const { map, roots } = buildRecycleTree(mapped)
     flatMap.value = map
@@ -228,6 +226,13 @@ function handleOpen(row) {
 
 function handleSelectionChange(rows) {
   selectedRows.value = rows
+  // 当前层级全部勾选时自动进入「全选」态，手动取消任意项则退出
+  selectAll.value = currentNodes.value.length > 0 && rows.length === currentNodes.value.length
+}
+
+function toggleSelectAll() {
+  if (selectAll.value) tableRef.value?.clearSelection()
+  else tableRef.value?.toggleAllSelection()
 }
 
 // 过滤出「顶层选中节点」：父节点也在选中集合时，子节点会随父级联恢复，避免重复请求
@@ -291,7 +296,7 @@ async function confirmRestore() {
       ElMessage.warning('已恢复 ' + (rows.length - fail) + ' 项，' + fail + ' 项失败')
     }
     showRestoreDialog.value = false
-    selectedRows.value = []
+    tableRef.value?.clearSelection()
     loadTrash()
     userStore.loadProfile().catch(() => {})
   } finally {
@@ -319,29 +324,10 @@ async function handleBatchDelete() {
     const fail = results.length - ok
     if (fail === 0) ElMessage.success('已彻底删除 ' + selectedRows.value.length + ' 项')
     else ElMessage.warning('已彻底删除 ' + ok + ' 项，' + fail + ' 项失败')
-    selectedRows.value = []
+    tableRef.value?.clearSelection()
     loadTrash()
     userStore.loadProfile().catch(() => {})
   } catch (e) { /* 拦截器已提示 */ } finally { deleting.value = false }
-}
-
-// 清空回收站：逐个彻底删除（force=1 幂等）
-async function handleClearTrash() {
-  try {
-    await ElMessageBox.confirm('确定清空回收站吗？所有文件将被彻底删除且无法恢复。', '清空回收站', { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' })
-  } catch (e) { return }
-  clearing.value = true
-  try {
-    const ids = allTrashIds.value
-    if (ids.length === 0) { ElMessage.info('回收站现在已为空'); return }
-    const results = await Promise.allSettled(ids.map(id => fileApi.remove(id, 1)))
-    const ok = results.filter(x => x.status === 'fulfilled').length
-    const fail = results.length - ok
-    if (fail === 0) ElMessage.success('已清空回收站')
-    else ElMessage.warning('已彻底删除 ' + ok + ' 项，' + fail + ' 项失败')
-    loadTrash()
-    userStore.loadProfile().catch(() => {})
-  } catch (e) { /* 拦截器已提示 */ } finally { clearing.value = false }
 }
 
 // 扁平目录列表 → 树（仅目录，根节点「全部文件」）
