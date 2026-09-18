@@ -99,22 +99,6 @@
           <div class="el-upload__tip">将上传到「{{ uploadTargetName }}」；支持秒传与大文件分片上传</div>
         </template>
       </el-upload>
-      <div v-if="resumableTasks.length" class="upload-resume">
-        <div class="upload-resume__label">未完成的上传（可续传）</div>
-        <div v-for="t in resumableTasks" :key="t.id" class="upload-resume__item">
-          <div class="upload-resume__row">
-            <span class="upload-resume__name" :title="t.name">{{ t.name }}</span>
-            <el-tag v-if="resuming[t.id]" size="small" type="success" effect="dark">续传中</el-tag>
-            <span class="upload-resume__progress">{{ formatSize(t.size) }} · {{ t.doneParts || 0 }}/{{ t.totalParts }} 片</span>
-          </div>
-          <el-progress v-if="resuming[t.id]" :percentage="resumePercent(t)" :stroke-width="6" />
-          <div class="upload-resume__actions">
-            <el-button v-if="!resuming[t.id]" size="small" type="primary" plain @click="resumeTask(t)">继续</el-button>
-            <el-button v-else size="small" type="warning" plain @click="pauseTask(t)">暂停</el-button>
-            <el-button size="small" text type="danger" @click="discardTask(t)">放弃</el-button>
-          </div>
-        </div>
-      </div>
     </el-dialog>
     <el-dialog v-model="showMoveDialog" title="移动到" width="min(480px, 92vw)" destroy-on-close>
       <div v-loading="moveTreeLoading" style="min-height: 200px; max-height: 400px; overflow-y: auto">
@@ -141,18 +125,19 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { Search, Rank, FolderOpened } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
+import { useUserStore } from '@/stores/user'
 import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatSize, formatDate, mapFileNode } from '@/utils/file'
 import { uploadApi } from '@/api'
 import { uploadFile } from '@/utils/upload'
-import { listUploadTasks, upsertUploadTask, removeUploadTask } from '@/utils/uploadTaskStore'
-import { getCachedFile, removeCachedFile } from '@/utils/uploadFileStore'
+import { upsertUploadTask, removeUploadTask } from '@/utils/uploadTaskStore'
 
 const fileStore = useFileStore()
+const userStore = useUserStore()
 const searchText = ref('')
 const sortBy = ref('time')
 const viewMode = ref('table')
@@ -164,8 +149,6 @@ const uploadTreeData = ref([])
 const uploadTreeLoading = ref(false)
 const uploadTargetId = ref(0)
 const uploadTargetName = ref('全部文件')
-const resumableTasks = ref([])
-const resuming = reactive({})
 const draggedItem = ref(null)
 const dragOverId = ref(null)
 const dropSuccessId = ref(null)
@@ -459,7 +442,6 @@ async function previewOffice(row) {
 // 打开上传对话框：加载目录树，默认选中「全部文件」（根目录）
 async function openUploadDialog() {
   showUploadDialog.value = true
-  refreshResumableTasks()
   uploadTargetId.value = 0
   uploadTargetName.value = '全部文件'
   uploadTreeLoading.value = true
@@ -479,11 +461,6 @@ async function openUploadDialog() {
 function handleUploadNodeClick(node) {
   uploadTargetId.value = node.id
   uploadTargetName.value = node.label
-}
-
-// 刷新「可续传任务」列表（读 localStorage）
-function refreshResumableTasks() {
-  resumableTasks.value = listUploadTasks()
 }
 
 // el-upload 自定义上传：分片上传 + 秒传 + 断点续传
@@ -511,93 +488,15 @@ function doUpload(options) {
   })
     .then(res => {
       if (snapId) removeUploadTask(snapId)
-      refreshResumableTasks()
       options.onSuccess(res)
       ElMessage.success(res.instant ? `「${name}」秒传成功` : `「${name}」上传成功`)
       reload()
+      userStore.loadProfile().catch(() => {})
     })
     .catch(err => {
       // 具体错误已由 request 拦截器统一 toast；任务保留在 localStorage 供续传
-      refreshResumableTasks()
       options.onError(err)
     })
-}
-
-// 续传：优先从 IndexedDB 取回缓存文件本体，无需重新选择；缓存缺失时回退到重新选文件
-async function resumeTask(task) {
-  const cached = await getCachedFile(task.id)
-  if (cached) {
-    ElMessage.info(`正在续传「${task.name}」，已传 ${task.doneParts || 0}/${task.totalParts} 片`)
-    resumeUpload(task, cached)
-  } else {
-    ElMessage.warning(`本地未找到「${task.name}」的缓存，请重新选择同一个文件继续`)
-    pickFileForResume(task)
-  }
-}
-
-function pickFileForResume(task) {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.onchange = () => {
-    const f = input.files && input.files[0]
-    if (!f) return
-    removeUploadTask(task.id)
-    refreshResumableTasks()
-    resumeUpload(task, f)
-  }
-  input.click()
-}
-
-function resumeUpload(task, f) {
-  const controller = new AbortController()
-  resuming[task.id] = controller
-  let snapId = null
-  uploadFile(f, task.parentId, {
-    signal: controller.signal,
-    onSnapshot: snap => {
-      snapId = snap.id
-      upsertUploadTask(snap)
-      refreshResumableTasks()
-    }
-  })
-    .then(res => {
-      delete resuming[task.id]
-      if (snapId) { removeUploadTask(snapId); removeCachedFile(snapId) }
-      refreshResumableTasks()
-      ElMessage.success(res.instant ? `「${task.name}」秒传成功` : `「${task.name}」上传成功`)
-      reload()
-    })
-    .catch(() => {
-      delete resuming[task.id]
-      refreshResumableTasks()
-    })
-}
-
-// 暂停续传：中断本次上传循环，已完成分片进度已落 localStorage，可随时再次继续
-function pauseTask(task) {
-  const c = resuming[task.id]
-  if (c) {
-    c.abort()
-    ElMessage.info(`已暂停「${task.name}」，可随时继续`)
-  }
-}
-
-// 续传进度百分比
-function resumePercent(t) {
-  if (!t.totalParts) return 0
-  return Math.round(((t.doneParts || 0) / t.totalParts) * 100)
-}
-
-// 放弃未完成上传：中止后端 session 并清除本地记录与文件缓存
-function discardTask(task) {
-  ElMessageBox.confirm(`放弃「${task.name}」的未完成上传？`, '提示', { type: 'warning', confirmButtonText: '放弃', cancelButtonText: '取消' })
-    .then(() => {
-      if (task.sessionId) uploadApi.abort(task.sessionId).catch(() => {})
-      removeUploadTask(task.id)
-      removeCachedFile(task.id)
-      refreshResumableTasks()
-    })
-    .catch(() => {})
 }
 
 async function handleDownload(row) {
@@ -618,7 +517,7 @@ async function handleDownload(row) {
 }
 
 function handleDelete(id) {
-  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {})
+  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload(); userStore.loadProfile().catch(() => {}) }).catch(() => {})
 }
 
 // 批量删除勾选项（移入回收站，可恢复）
@@ -640,6 +539,7 @@ async function handleBatchDelete() {
     selectedRows.value = []
     tableKey.value++
     reload()
+    userStore.loadProfile().catch(() => {})
   } catch (e) { /* 拦截器已提示 */ } finally { deleting.value = false }
 }
 
@@ -724,13 +624,6 @@ function getFileIconColor(file) {
 .upload-target { margin-bottom: 16px; }
 .upload-target__label { font-size: 13px; color: #606266; margin-bottom: 6px; }
 .upload-target__tree { max-height: 220px; overflow-y: auto; padding: 2px 6px; border: 1px solid #dcdfe6; border-radius: 6px; }
-.upload-resume { margin-top: 16px; border-top: 1px dashed #dcdfe6; padding-top: 12px; }
-.upload-resume__label { font-size: 13px; color: #606266; margin-bottom: 8px; }
-.upload-resume__item { padding: 8px 10px; border: 1px solid #ebeef5; border-radius: 6px; margin-bottom: 6px; }
-.upload-resume__row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.upload-resume__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.upload-resume__progress { font-size: 12px; color: #909399; white-space: nowrap; }
-.upload-resume__actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 
 /* 工具栏：左搜索框、右排序+视图切换，三端统一 flex 排列 */
 .toolbar-left { display: flex; align-items: center; flex: 1; min-width: 0; }

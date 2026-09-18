@@ -51,6 +51,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileApi } from '@/api'
+import { useUserStore } from '@/stores/user'
 import { mapFileNode, formatSize, formatDate } from '@/utils/file'
 
 const recycleFiles = ref([])
@@ -59,6 +60,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
 const clearing = ref(false)
+const userStore = useUserStore()
 
 onMounted(() => loadTrash())
 
@@ -81,11 +83,12 @@ function handleRestore(row) {
     // 后端重名/原目录不存在时会自动改名或回根目录，返回还原后的节点
     ElMessage.success(res?.name ? `「${res.name}」已恢复` : '已恢复')
     loadTrash()
+    userStore.loadProfile().catch(() => {})
   }).catch(() => {})
 }
 
 function handlePermanentDelete(row) {
-  fileApi.remove(row.id, 1).then(() => { ElMessage.success('已彻底删除'); loadTrash() }).catch(() => {})
+  fileApi.remove(row.id, 1).then(() => { ElMessage.success('已彻底删除'); loadTrash(); userStore.loadProfile().catch(() => {}) }).catch(() => {})
 }
 
 // 清空回收站：分页拉取全部项后逐个彻底删除
@@ -113,6 +116,7 @@ async function handleClearTrash() {
     else ElMessage.warning('已彻底删除 ' + ok + ' 项，' + fail + ' 项失败')
     currentPage.value = 1
     loadTrash()
+    userStore.loadProfile().catch(() => {})
   } catch (e) { /* 拦截器已提示 */ } finally { clearing.value = false }
 }
 
