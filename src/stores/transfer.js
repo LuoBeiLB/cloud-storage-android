@@ -9,7 +9,7 @@ import { uploadApi } from '@/api'
 // 传输任务运行时状态：跨页面保持续传进行中状态（切换路由不销毁 store，上传继续）
 export const useTransferStore = defineStore('transfer', () => {
   const tasks = ref([])
-  const resuming = reactive({}) // task.id -> AbortController
+  const resuming = reactive({}) // task.id -> AbortController（表示该任务正在上传/续传中）
 
   function refresh() {
     tasks.value = listUploadTasks()
@@ -20,12 +20,54 @@ export const useTransferStore = defineStore('transfer', () => {
     return Math.min(100, Math.round(((t.doneParts || 0) / t.totalParts) * 100))
   }
 
+  // 统一上传入口：首次上传与续传共用。
+  // 维护 resuming 状态（可暂停）、实时刷新进度列表；成功后清理任务，暂停/失败保留任务以便续传。
+  function upload(file, parentId, handlers = {}) {
+    const { onProgress } = handlers
+    const controller = new AbortController()
+    // 首次上传时 sha256 尚未算出，暂用临时 key 登记；拿到快照 id 后迁移到真实 id
+    const tmpKey = 'tmp-' + Date.now().toString(36) + Math.random().toString(36).slice(2)
+    resuming[tmpKey] = controller
+    let snapId = null
+
+    const clearResume = () => {
+      if (resuming[tmpKey] === controller) delete resuming[tmpKey]
+      if (snapId && resuming[snapId] === controller) delete resuming[snapId]
+    }
+
+    return uploadFile(file, parentId, {
+      signal: controller.signal,
+      onProgress,
+      onSnapshot: snap => {
+        snapId = snap.id
+        if (resuming[tmpKey] === controller) {
+          delete resuming[tmpKey]
+          resuming[snapId] = controller
+        }
+        upsertUploadTask(snap)
+        refresh()
+      }
+    })
+      .then(res => {
+        clearResume()
+        if (snapId) { removeUploadTask(snapId); removeCachedFile(snapId) }
+        refresh()
+        ElMessage.success(res.instant ? `「${file.name}」秒传成功` : `「${file.name}」上传成功`)
+        return res
+      })
+      .catch(err => {
+        clearResume()
+        refresh()
+        throw err
+      })
+  }
+
   // 续传：优先从 IndexedDB 取回缓存文件本体，无需重新选择；缓存缺失时回退到重新选文件
   async function resumeTask(task) {
     const cached = await getCachedFile(task.id)
     if (cached) {
       ElMessage.info(`正在续传「${task.name}」，已传 ${task.doneParts || 0}/${task.totalParts} 片`)
-      resumeUpload(task, cached)
+      upload(cached, task.parentId).catch(() => {})
     } else {
       ElMessage.warning(`本地未找到「${task.name}」的缓存，请重新选择同一个文件继续`)
       pickFileForResume(task)
@@ -40,34 +82,9 @@ export const useTransferStore = defineStore('transfer', () => {
       if (!f) return
       removeUploadTask(task.id)
       refresh()
-      resumeUpload(task, f)
+      upload(f, task.parentId).catch(() => {})
     }
     input.click()
-  }
-
-  function resumeUpload(task, f) {
-    if (resuming[task.id]) return // 已在续传中，避免重复触发
-    const controller = new AbortController()
-    resuming[task.id] = controller
-    let snapId = task.id
-    uploadFile(f, task.parentId, {
-      signal: controller.signal,
-      onSnapshot: snap => {
-        snapId = snap.id
-        upsertUploadTask(snap)
-        refresh()
-      }
-    })
-      .then(res => {
-        if (resuming[task.id] === controller) delete resuming[task.id]
-        if (snapId) { removeUploadTask(snapId); removeCachedFile(snapId) }
-        refresh()
-        ElMessage.success(res.instant ? `「${task.name}」秒传成功` : `「${task.name}」上传成功`)
-      })
-      .catch(() => {
-        if (resuming[task.id] === controller) delete resuming[task.id]
-        refresh()
-      })
   }
 
   function pauseTask(task) {
@@ -96,5 +113,5 @@ export const useTransferStore = defineStore('transfer', () => {
 
   refresh()
 
-  return { tasks, resuming, refresh, percent, resumeTask, resumeUpload, pauseTask, discardTask }
+  return { tasks, resuming, refresh, percent, resumeTask, upload, pauseTask, discardTask }
 })

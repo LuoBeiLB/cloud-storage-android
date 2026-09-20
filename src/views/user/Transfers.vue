@@ -11,7 +11,7 @@
       <div v-for="t in transfer.tasks" :key="t.id" class="transfer-item">
         <div class="transfer-item__row">
           <span class="transfer-item__name" :title="t.name">{{ t.name }}</span>
-          <el-tag v-if="transfer.resuming[t.id]" size="small" type="success" effect="dark">续传中</el-tag>
+          <el-tag v-if="transfer.resuming[t.id]" size="small" type="success" effect="dark">上传中</el-tag>
           <span class="transfer-item__meta">{{ formatSize(t.size) }} · {{ t.doneParts || 0 }}/{{ t.totalParts }} 片</span>
         </div>
         <el-progress :percentage="transfer.percent(t)" :stroke-width="8" />
