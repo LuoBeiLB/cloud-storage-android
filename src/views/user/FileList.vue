@@ -165,12 +165,6 @@ const folderTreeData = ref([])
 const moveTargetId = ref(null)
 const moveTreeLoading = ref(false)
 const moveLoading = ref(false)
-const deleting = ref(false)
-const selectAll = ref(false)
-const allItems = ref([])
-const selectLoading = ref(false)
-const tableRef = ref(null)
-const selecting = ref(false)
 
 // 在线预览状态
 const previewVisible = ref(false)
@@ -607,64 +601,6 @@ function handleNewFolder() {
         reload()
       }).catch(() => {})
     }).catch(() => {})
-}
-
-// 批量删除勾选项（移入回收站，可恢复）
-async function handleBatchDelete() {
-  const rows = topLevelItems(selectAll.value ? allItems.value : selectedRows.value)
-  if (rows.length === 0) return
-  try {
-    await ElMessageBox.confirm('确定删除选中的 ' + rows.length + ' 项吗？包含文件夹时将连同其内所有文件一起移入回收站。', '批量删除', { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' })
-  } catch (e) { return }
-  deleting.value = true
-  try {
-    const results = await Promise.allSettled(rows.map(r => fileApi.remove(r.id, 0)))
-    const ok = results.filter(x => x.status === 'fulfilled').length
-    const fail = results.length - ok
-    if (fail === 0) ElMessage.success('已删除 ' + ok + ' 项（移入回收站）')
-    else ElMessage.warning('已删除 ' + ok + ' 项，' + fail + ' 项失败')
-    selectAll.value = false
-    allItems.value = []
-    selectedRows.value = []
-    tableKey.value++
-    reload()
-  } catch (e) { /* 拦截器已提示 */ } finally { deleting.value = false }
-}
-
-// 全选/取消全选：全选当前文件夹下所有子项（跨页）
-async function toggleSelectAll() {
-  if (selectAll.value) {
-    selectAll.value = false
-    allItems.value = []
-    tableRef.value?.clearSelection()
-    return
-  }
-  selectLoading.value = true
-  try {
-    const items = await fetchAllChildren()
-    if (items.length === 0) { ElMessage.info('当前文件夹已为空'); return }
-    allItems.value = items
-    selectAll.value = true
-    selecting.value = true
-    tableRef.value?.toggleAllSelection()
-    await nextTick()
-    selecting.value = false
-  } catch (e) { /* 拦截器已提示 */ } finally { selectLoading.value = false }
-}
-
-// 拉取当前文件夹下所有内容（递归，包含子文件夹内的所有文件）
-async function fetchAllChildren() {
-  const list = await fileApi.tree()
-  const childMap = {}
-  list.forEach(n => { (childMap[n.parentId] = childMap[n.parentId] || []).push(n) })
-  const result = []
-  const queue = [...(childMap[fileStore.currentParentId] || [])]
-  while (queue.length) {
-    const node = queue.shift()
-    result.push(node)
-    for (const c of (childMap[node.id] || [])) queue.push(c)
-  }
-  return result
 }
 
 function getFileIcon(file) {
