@@ -92,11 +92,35 @@
           />
         </div>
       </div>
-      <el-upload drag multiple :http-request="doUpload" :show-file-list="true">
+      <el-upload ref="uploadRef" drag multiple :http-request="doUpload" :show-file-list="true" class="upload-box">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
         <template #tip>
           <div class="el-upload__tip">将上传到「{{ uploadTargetName }}」；支持秒传与大文件分片上传</div>
+        </template>
+        <template #file="{ file }">
+          <div class="upload-file-card">
+            <div class="upload-file-card__icon" :style="{ background: uploadFileIconBg(file), color: uploadFileIconColor(file) }">
+              <el-icon :size="22"><component :is="uploadFileIcon(file)" /></el-icon>
+            </div>
+            <div class="upload-file-card__main">
+              <div class="upload-file-card__titlerow">
+                <span class="upload-file-card__name" :title="file.name">{{ file.name }}</span>
+                <span class="upload-file-card__size">{{ formatSize(file.size || 0) }}</span>
+              </div>
+              <div v-if="file.status === 'uploading'" class="upload-file-card__progressrow">
+                <span class="upload-file-card__bar"><span class="upload-file-card__bar-fill" :style="{ width: uploadFilePct(file) + '%' }"></span></span>
+                <span class="upload-file-card__pct">{{ uploadFilePct(file) }}%</span>
+              </div>
+              <span v-else class="upload-file-card__status" :class="'is-' + (file.status || 'ready')">
+                <el-icon v-if="file.status === 'success'"><CircleCheckFilled /></el-icon>
+                <el-icon v-else-if="file.status === 'fail'"><CircleCloseFilled /></el-icon>
+                <el-icon v-else><Clock /></el-icon>
+                {{ uploadStatusText(file) }}
+              </span>
+            </div>
+            <el-icon v-if="file.status !== 'uploading'" class="upload-file-card__remove" @click="removeUploadFile(file)"><Close /></el-icon>
+          </div>
         </template>
       </el-upload>
     </el-dialog>
@@ -131,7 +155,7 @@ import { useFileStore } from '@/stores/file'
 import { useUserStore } from '@/stores/user'
 import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { formatSize, formatDate, mapFileNode } from '@/utils/file'
+import { formatSize, formatDate, mapFileNode, extToType } from '@/utils/file'
 import { uploadApi } from '@/api'
 import { useTransferStore } from '@/stores/transfer'
 
@@ -144,6 +168,7 @@ const viewMode = ref('table')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const showUploadDialog = ref(false)
+const uploadRef = ref(null)
 const uploadTreeRef = ref(null)
 const uploadTreeData = ref([])
 const uploadTreeLoading = ref(false)
@@ -504,6 +529,20 @@ function doUpload(options) {
 }
 
 // 关闭上传对话框时，若仍有文件在后台上传，提示去「传输任务」查看进度
+// —— 上传文件卡片辅助 ——
+function uploadFileType(file) { return extToType(file?.name || '') }
+function uploadFileIcon(file) { return getFileIcon({ type: uploadFileType(file) }) }
+function uploadFileIconColor(file) { return getFileIconColor({ type: uploadFileType(file) }) }
+function uploadFileIconBg(file) { return getFileIconColor({ type: uploadFileType(file) }) + '1a' }
+function uploadFilePct(file) { return Math.floor(file?.percentage || 0) }
+function uploadStatusText(file) {
+  if (file?.status === 'uploading') return '上传中'
+  if (file?.status === 'success') return '已完成'
+  if (file?.status === 'fail') return '失败'
+  return '等待上传'
+}
+function removeUploadFile(file) { uploadRef.value?.handleRemove(file) }
+
 function onUploadDialogClosed() {
   if (activeUploads.value > 0) {
     ElMessage.info('文件仍在后台上传中，可在「传输任务」页面查看进度')
@@ -578,10 +617,16 @@ async function toggleSelectAll() {
 // 拉取当前文件夹下所有内容（递归，包含子文件夹内的所有文件）
 async function fetchAllChildren() {
   const list = await fileApi.tree()
+  const validIds = new Set(list.map(n => n.id))
   const childMap = {}
-  list.forEach(n => { (childMap[n.parentId] = childMap[n.parentId] || []).push(n) })
+  list.forEach(n => {
+    // 顶层节点 parentId 可能为 0 / null / 指向不在树中的父 id，统一归到根目录 0（与 buildFolderTree 根判定对齐）
+    const pid = (n.parentId === 0 || n.parentId == null || !validIds.has(n.parentId)) ? 0 : n.parentId
+    ;(childMap[pid] = childMap[pid] || []).push(n)
+  })
   const result = []
-  const queue = [...(childMap[fileStore.currentParentId] || [])]
+  const startId = fileStore.currentParentId == null ? 0 : fileStore.currentParentId
+  const queue = [...(childMap[startId] || [])]
   while (queue.length) {
     const node = queue.shift()
     result.push(node)
@@ -635,6 +680,82 @@ function getFileIconColor(file) {
 .upload-target { margin-bottom: 16px; }
 .upload-target__label { font-size: 13px; color: #606266; margin-bottom: 6px; }
 .upload-target__tree { max-height: 220px; overflow-y: auto; padding: 2px 6px; border: 1px solid #dcdfe6; border-radius: 6px; }
+
+/* ===== 上传文件卡片 ===== */
+.upload-box :deep(.el-upload-list) { margin-top: 14px; }
+.upload-box :deep(.el-upload-list__item) {
+  display: block;
+  padding: 0;
+  margin-bottom: 10px;
+  border: none;
+  border-radius: 0;
+  line-height: 1.5;
+  transition: none;
+}
+.upload-box :deep(.el-upload-list__item:hover) { background: transparent; }
+.upload-file-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--cs-bg-elevated);
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius-lg);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.upload-file-card:hover { border-color: var(--cs-primary-light); box-shadow: var(--cs-shadow-sm); }
+.upload-file-card__icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+.upload-file-card__main { flex: 1; min-width: 0; }
+.upload-file-card__titlerow { display: flex; align-items: center; gap: 8px; }
+.upload-file-card__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cs-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-file-card__size { flex-shrink: 0; font-size: 12px; color: var(--cs-text-tertiary); }
+.upload-file-card__progressrow { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.upload-file-card__bar {
+  display: block;
+  flex: 1;
+  height: 6px;
+  background: var(--cs-border-light);
+  border-radius: 100px;
+  overflow: hidden;
+}
+.upload-file-card__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, var(--cs-primary-light), var(--cs-primary));
+  transition: width 0.2s ease;
+}
+.upload-file-card__pct { flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--cs-primary); min-width: 34px; text-align: right; }
+.upload-file-card__status { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; }
+.upload-file-card__status.is-uploading { color: var(--cs-primary); }
+.upload-file-card__status.is-success { color: var(--cs-success); }
+.upload-file-card__status.is-fail { color: var(--cs-danger); }
+.upload-file-card__status.is-ready { color: var(--cs-text-tertiary); }
+.upload-file-card__remove {
+  flex-shrink: 0;
+  color: var(--cs-text-tertiary);
+  cursor: pointer;
+  font-size: 16px;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+.upload-file-card__remove:hover { color: var(--cs-danger); transform: scale(1.15); }
 
 /* 工具栏：左搜索框、右排序+视图切换，三端统一 flex 排列 */
 .toolbar-left { display: flex; align-items: center; flex: 1; min-width: 0; }
