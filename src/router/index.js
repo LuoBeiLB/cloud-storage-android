@@ -5,6 +5,7 @@ const routes = [
   { path: '/', component: () => import('@/layouts/UserLayout.vue'), meta: { requiresAuth: true, role: 'user' }, redirect: '/files',
     children: [
       { path: 'files', name: 'FileList', component: () => import('@/views/user/FileList.vue'), meta: { title: '我的文件' } },
+      { path: 'transfers', name: 'Transfers', component: () => import('@/views/user/Transfers.vue'), meta: { title: '传输任务' } },
       { path: 'recycle', name: 'RecycleBin', component: () => import('@/views/user/RecycleBin.vue'), meta: { title: '回收站' } },
       { path: 'profile', name: 'PersonalCenter', component: () => import('@/views/user/PersonalCenter.vue'), meta: { title: '个人中心' } }
     ]

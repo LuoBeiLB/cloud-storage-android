@@ -1,12 +1,15 @@
 <template>
   <div class="cs-page">
     <div class="breadcrumb-bar">
-      <el-breadcrumb separator="/">
-        <el-breadcrumb-item><el-icon><HomeFilled /></el-icon></el-breadcrumb-item>
-        <el-breadcrumb-item v-for="item in fileStore.breadcrumb" :key="item.id">
-          <a @click.prevent="handleNavigate(item.id)">{{ item.name }}</a>
-        </el-breadcrumb-item>
-      </el-breadcrumb>
+      <div class="breadcrumb-left">
+        <el-button class="back-btn" :disabled="!canGoUp" @click="goUp" title="返回上一级"><el-icon><Back /></el-icon><span>上一级</span></el-button>
+        <el-breadcrumb separator="/">
+          <el-breadcrumb-item><el-icon><HomeFilled /></el-icon></el-breadcrumb-item>
+          <el-breadcrumb-item v-for="item in fileStore.breadcrumb" :key="item.id">
+            <a @click.prevent="handleNavigate(item.id)">{{ item.name }}</a>
+          </el-breadcrumb-item>
+        </el-breadcrumb>
+      </div>
       <div class="breadcrumb-actions">
         <el-button type="primary" @click="openUploadDialog"><el-icon><UploadFilled /></el-icon><span>上传文件</span></el-button>
         <el-button @click="handleNewFolder"><el-icon><FolderAdd /></el-icon><span>新建文件夹</span></el-button>
@@ -106,6 +109,18 @@
         <el-button type="primary" :loading="moveLoading" :disabled="moveTargetId == null" @click="confirmBatchMove">确定移动</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="previewVisible" :title="previewFile?.name || '在线预览'" width="min(920px, 94vw)" top="5vh" destroy-on-close @closed="closePreview">
+      <div v-loading="previewLoading" class="preview-body">
+        <div v-if="previewType === 'image'" class="preview-image-wrap">
+          <img :src="previewUrl" :alt="previewFile?.name" />
+        </div>
+        <iframe v-else-if="previewType === 'pdf'" :src="previewUrl" class="preview-iframe" title="PDF 预览" />
+        <video v-else-if="previewType === 'video'" :src="previewUrl" controls class="preview-media" />
+        <audio v-else-if="previewType === 'audio'" :src="previewUrl" controls class="preview-audio" />
+        <pre v-else-if="previewType === 'text'" class="preview-text">{{ previewText }}</pre>
+        <div v-else-if="previewType === 'office'" ref="officeContainer" class="preview-office"></div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -113,13 +128,16 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { Search, Rank, FolderOpened } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
+import { useUserStore } from '@/stores/user'
 import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatSize, formatDate, mapFileNode } from '@/utils/file'
 import { uploadApi } from '@/api'
 import { uploadFile } from '@/utils/upload'
+import { upsertUploadTask, removeUploadTask } from '@/utils/uploadTaskStore'
 
 const fileStore = useFileStore()
+const userStore = useUserStore()
 const searchText = ref('')
 const sortBy = ref('time')
 const viewMode = ref('table')
@@ -136,6 +154,12 @@ const dragOverId = ref(null)
 const dropSuccessId = ref(null)
 const tableKey = ref(0)
 const selectedRows = ref([])
+const deleting = ref(false)
+const selectAll = ref(false)
+const allItems = ref([])
+const selectLoading = ref(false)
+const tableRef = ref(null)
+const selecting = ref(false)
 const showMoveDialog = ref(false)
 const folderTreeData = ref([])
 const moveTargetId = ref(null)
@@ -147,6 +171,15 @@ const allItems = ref([])
 const selectLoading = ref(false)
 const tableRef = ref(null)
 const selecting = ref(false)
+
+// 在线预览状态
+const previewVisible = ref(false)
+const previewFile = ref(null)
+const previewType = ref('')
+const previewUrl = ref('')
+const previewText = ref('')
+const previewLoading = ref(false)
+const officeContainer = ref(null)
 
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
@@ -300,9 +333,116 @@ async function confirmBatchMove() {
 function handleSizeChange() { currentPage.value = 1; reload() }
 function handleNavigate(id) { currentPage.value = 1; fileStore.navigateTo(id) }
 
+// 返回上一级：breadcrumb = [全部文件(0), 一级, ..., 当前]，倒数第二项即上一级
+const canGoUp = computed(() => fileStore.breadcrumb.length > 1)
+function goUp() {
+  if (!canGoUp.value) return
+  const parent = fileStore.breadcrumb[fileStore.breadcrumb.length - 2]
+  handleNavigate(parent ? parent.id : 0)
+}
+
 function handleOpen(row) {
-  if (row.isDir) { handleNavigate(row.id) }
-  else ElMessage.info('在线预览待后端接口支持')
+  if (row.isDir) { handleNavigate(row.id); return }
+  openPreview(row)
+}
+
+// 在线预览：复用下载预签名 URL，按文件类型渲染
+async function openPreview(row) {
+  const type = row.type
+  if (type === 'word' || type === 'excel' || type === 'ppt') {
+    previewFile.value = row
+    previewType.value = 'office'
+    previewUrl.value = ''
+    previewText.value = ''
+    previewVisible.value = true
+    await previewOffice(row)
+    return
+  }
+  if (type === 'video') {
+    ElMessage.info('视频暂不支持在线预览，请下载后观看')
+    return
+  }
+  if (type === 'archive') {
+    ElMessage.info('压缩包暂不支持在线预览，请下载后查看')
+    return
+  }
+  previewFile.value = row
+  previewType.value = type
+  previewUrl.value = ''
+  previewText.value = ''
+  previewVisible.value = true
+  if (type === 'text') await loadTextPreview(row)
+  else await loadUrlPreview(row)
+}
+
+// 图片 / PDF / 视频 / 音频：拿预签名 URL 直接渲染
+async function loadUrlPreview(row) {
+  previewLoading.value = true
+  try {
+    const { url } = await uploadApi.getPreviewUrl(row.id)
+    previewUrl.value = url
+  } catch (e) {
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+// 文本：需跨域 fetch 内容（依赖后端 / MinIO 配置 CORS）
+async function loadTextPreview(row) {
+  previewLoading.value = true
+  try {
+    const { url } = await uploadApi.getPreviewUrl(row.id)
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error('HTTP ' + resp.status)
+    previewText.value = await resp.text()
+  } catch (e) {
+    ElMessage.error('文本预览失败（可能是跨域限制），请下载后查看')
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function closePreview() {
+  previewUrl.value = ''
+  previewText.value = ''
+  previewFile.value = null
+  previewType.value = ''
+}
+
+// Office 在线预览：docx→docx-preview，xlsx/xls→SheetJS；pptx 及旧版 doc/ppt 前端无成熟库，降级下载
+async function previewOffice(row) {
+  previewLoading.value = true
+  try {
+    const ext = (row.name || '').split('.').pop().toLowerCase()
+    if (ext !== 'docx' && ext !== 'xlsx' && ext !== 'xls') {
+      ElMessage.info('该 Office 格式暂不支持在线预览，已为你转为下载')
+      await handleDownload(row)
+      previewVisible.value = false
+      return
+    }
+    const { url } = await uploadApi.getPreviewUrl(row.id)
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error('HTTP ' + resp.status)
+    const container = officeContainer.value
+    if (!container) throw new Error('预览容器未就绪')
+    if (ext === 'docx') {
+      const { renderAsync } = await import('docx-preview')
+      await renderAsync(await resp.blob(), container)
+    } else {
+      const xlsxMod = await import('xlsx')
+      const XLSX = xlsxMod.default || xlsxMod
+      const wb = XLSX.read(await resp.arrayBuffer(), { type: 'array' })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      container.innerHTML = XLSX.utils.sheet_to_html(sheet)
+    }
+  } catch (e) {
+    ElMessage.error('Office 预览失败，请下载后查看')
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
 }
 
 // 打开上传对话框：加载目录树，默认选中「全部文件」（根目录）
@@ -339,19 +479,34 @@ function doUpload(options) {
     options.onError(new Error('empty file'))
     return
   }
+  // 单文件上限 10GB（与后端 init 一致），选文件时先拦截，避免对大文件做无谓的 SHA256 计算
+  if (raw.size > 10 * 1024 * 1024 * 1024) {
+    ElMessage.error(`「${name}」超过单文件上传上限 10GB，请选择更小的文件`)
+    options.onError(new Error('file too large'))
+    return
+  }
   const parentId = uploadTargetId.value ?? 0
-  uploadFile(raw, parentId, ({ phase, percent }) => {
-    // 哈希阶段(本地计算指纹，不发网络请求)映射 0-30%，分片上传映射 30-100%
-    const total = phase === 'hash' ? Math.round(percent * 0.3) : 30 + Math.round(percent * 0.7)
-    options.onProgress({ percent: total })
+  let snapId = null
+  uploadFile(raw, parentId, {
+    onProgress: ({ phase, percent }) => {
+      // 哈希阶段(本地计算指纹，不发网络请求)映射 0-30%，分片上传映射 30-100%
+      const total = phase === 'hash' ? Math.round(percent * 0.3) : 30 + Math.round(percent * 0.7)
+      options.onProgress({ percent: total })
+    },
+    onSnapshot: snap => {
+      snapId = snap.id
+      upsertUploadTask(snap)
+    }
   })
     .then(res => {
+      if (snapId) removeUploadTask(snapId)
       options.onSuccess(res)
       ElMessage.success(res.instant ? `「${name}」秒传成功` : `「${name}」上传成功`)
       reload()
+      userStore.loadProfile().catch(() => {})
     })
     .catch(err => {
-      // 具体错误已由 request 拦截器统一 toast
+      // 具体错误已由 request 拦截器统一 toast；任务保留在 localStorage 供续传
       options.onError(err)
     })
 }
@@ -365,8 +520,6 @@ async function handleDownload(row) {
     const a = document.createElement('a')
     a.href = url
     a.download = row.name
-    a.target = '_blank'
-    a.rel = 'noopener'
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -376,7 +529,66 @@ async function handleDownload(row) {
 }
 
 function handleDelete(id) {
-  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {})
+  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload(); userStore.loadProfile().catch(() => {}) }).catch(() => {})
+}
+
+// 批量删除勾选项（移入回收站，可恢复）
+async function handleBatchDelete() {
+  const rows = topLevelItems(selectAll.value ? allItems.value : selectedRows.value)
+  if (rows.length === 0) return
+  try {
+    await ElMessageBox.confirm('确定删除选中的 ' + rows.length + ' 项吗？包含文件夹时将连同其内所有文件一起移入回收站。', '批量删除', { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' })
+  } catch (e) { return }
+  deleting.value = true
+  try {
+    const results = await Promise.allSettled(rows.map(r => fileApi.remove(r.id, 0)))
+    const ok = results.filter(x => x.status === 'fulfilled').length
+    const fail = results.length - ok
+    if (fail === 0) ElMessage.success('已删除 ' + ok + ' 项（移入回收站）')
+    else ElMessage.warning('已删除 ' + ok + ' 项，' + fail + ' 项失败')
+    selectAll.value = false
+    allItems.value = []
+    selectedRows.value = []
+    tableKey.value++
+    reload()
+    userStore.loadProfile().catch(() => {})
+  } catch (e) { /* 拦截器已提示 */ } finally { deleting.value = false }
+}
+
+// 全选/取消全选：全选当前文件夹下所有内容（递归包含子文件夹内文件）
+async function toggleSelectAll() {
+  if (selectAll.value) {
+    selectAll.value = false
+    allItems.value = []
+    tableRef.value?.clearSelection()
+    return
+  }
+  selectLoading.value = true
+  try {
+    const items = await fetchAllChildren()
+    if (items.length === 0) { ElMessage.info('当前文件夹已为空'); return }
+    allItems.value = items
+    selectAll.value = true
+    selecting.value = true
+    tableRef.value?.toggleAllSelection()
+    await nextTick()
+    selecting.value = false
+  } catch (e) { /* 拦截器已提示 */ } finally { selectLoading.value = false }
+}
+
+// 拉取当前文件夹下所有内容（递归，包含子文件夹内的所有文件）
+async function fetchAllChildren() {
+  const list = await fileApi.tree()
+  const childMap = {}
+  list.forEach(n => { (childMap[n.parentId] = childMap[n.parentId] || []).push(n) })
+  const result = []
+  const queue = [...(childMap[fileStore.currentParentId] || [])]
+  while (queue.length) {
+    const node = queue.shift()
+    result.push(node)
+    for (const c of (childMap[node.id] || [])) queue.push(c)
+  }
+  return result
 }
 
 function handleRename(row) {
@@ -456,11 +668,11 @@ async function fetchAllChildren() {
 }
 
 function getFileIcon(file) {
-  const m = { folder:'Folder',pdf:'Document',image:'Picture',word:'Document',excel:'Grid',ppt:'Monitor',video:'VideoCamera',archive:'Files',text:'Notebook' }
+  const m = { folder:'Folder',pdf:'Document',image:'Picture',word:'Document',excel:'Grid',ppt:'Monitor',video:'VideoCamera',audio:'Headset',archive:'Files',text:'Notebook' }
   return m[file.type] || 'Document'
 }
 function getFileIconColor(file) {
-  const m = { folder:'#faad14',pdf:'#ff4d4f',image:'#52c41a',word:'#1677ff',excel:'#52c41a',ppt:'#fa8c16',video:'#722ed1',archive:'#8c8c8c',text:'#595959' }
+  const m = { folder:'#faad14',pdf:'#ff4d4f',image:'#52c41a',word:'#1677ff',excel:'#52c41a',ppt:'#fa8c16',video:'#722ed1',audio:'#13c2c2',archive:'#8c8c8c',text:'#595959' }
   return m[file.type] || '#8c8c8c'
 }
 </script>
@@ -488,6 +700,11 @@ function getFileIconColor(file) {
 .toolbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .search-input { width: 240px; }
 .sort-select { width: 140px; }
+
+/* 面包屑左侧：返回上一级 + 面包屑 */
+.breadcrumb-left { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.breadcrumb-left .back-btn { margin-right: 4px; }
+.breadcrumb-left .el-breadcrumb { white-space: nowrap; }
 
 /* 面包屑右侧按钮 */
 .breadcrumb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -620,6 +837,16 @@ function getFileIconColor(file) {
   display: flex;
   align-items: center;
 }
+
+/* ===== 在线预览 ===== */
+.preview-body { min-height: 320px; display: flex; align-items: center; justify-content: center; }
+.preview-image-wrap { width: 100%; display: flex; align-items: center; justify-content: center; }
+.preview-image-wrap img { max-width: 100%; max-height: 72vh; object-fit: contain; }
+.preview-iframe { width: 100%; height: 72vh; border: none; border-radius: 6px; }
+.preview-media { width: 100%; max-height: 72vh; border-radius: 6px; }
+.preview-audio { width: 100%; margin-top: 40px; }
+.preview-text { width: 100%; min-height: 320px; max-height: 72vh; margin: 0; padding: 16px; overflow: auto; background: rgba(0, 0, 0, 0.04); border-radius: 6px; font-family: 'Consolas', 'Menlo', 'Monaco', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; text-align: left; }
+.preview-office { width: 100%; min-height: 320px; max-height: 72vh; overflow: auto; padding: 16px 20px; background: #fff; border-radius: 6px; text-align: left; }
 
 @media (max-width: 768px) {
   .breadcrumb-bar { flex-wrap: wrap; gap: 12px; }

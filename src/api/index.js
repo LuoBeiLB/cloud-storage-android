@@ -21,10 +21,10 @@ export const fileApi = {
   update: (id, data) => request.patch(`/files/${id}`, data),
   // 删除：force=1 彻底删除（回收站内），默认进回收站
   remove: (id, force = 0) => request.delete(`/files/${id}`, { params: { force } }),
-  // 回收站列表：{ page, size } → { total, list }
+  // 回收站列表：{ parent, page, size } → { total, list, breadcrumb }
   trash: params => request.get('/files/trash', { params }),
-  // 从回收站还原
-  restore: id => request.post(`/files/${id}/restore`),
+  // 从回收站还原：可选目标目录 targetParentId（0=根目录「全部文件」，缺省=原位置）
+  restore: (id, data) => request.post(`/files/${id}/restore`, data || {}),
   // 下载文件 → Map<string,string>
   download: id => request.get(`/files/${id}/download`),
   // 获取完整目录树（扁平 id+parentId 列表，前端自行建树）
@@ -53,15 +53,22 @@ export const adminApi = {
   // { status, quotaBytes, role }
   updateUser: (id, data) => request.patch(`/admin/users/${id}`, data),
   // 重置密码 → { password: 'xxx' }（新密码）
-  resetPassword: id => request.post(`/admin/users/${id}/reset-password`)
+  resetPassword: id => request.post(`/admin/users/${id}/reset-password`),
+  // ===== 管理端统计（R-C09）=====
+  // 平台用量总览 → { totalQuotaBytes, usedBytes, remainingBytes, userCount }
+  statsOverview: () => request.get('/admin/stats/overview'),
+  // 用量 Top 榜 → [{ userId, username, usedBytes, quotaBytes }]
+  statsTopUsers: () => request.get('/admin/stats/top-users'),
+  // 近 N 日流量曲线 → [{ date, uploadBytes, downloadBytes }]
+  statsTraffic: days => request.get('/admin/stats/traffic', { params: { days } })
 }
 
 // ===== 文件传输（B 组：分片上传 / 秒传 / 断点续传 / 下载）=====
 export const uploadApi = {
-  // 初始化上传（含秒传分支）：{ name, size, parentId, sha256 } → { status:'done', fileId } 或 { status:'uploading', sessionId, uploadId, chunkSize }
+  // 初始化上传（含秒传）：{ name, size, parentId, sha256 } → { status:'done', fileId } 或 { status:'uploading', sessionId, uploadId, chunkSize }
   init: data => request.post('/uploads/init', data),
   // 上传单个分片：body 为该分片二进制，Content-Type 固定 octet-stream
-  uploadPart: (sessionId, partNo, blob) => request.put(`/uploads/${sessionId}/parts/${partNo}`, blob, { headers: { 'Content-Type': 'application/octet-stream' }, timeout: 5 * 60 * 1000 }),
+  uploadPart: (sessionId, partNo, blob, signal) => request.put(`/uploads/${sessionId}/parts/${partNo}`, blob, { headers: { 'Content-Type': 'application/octet-stream' }, timeout: 5 * 60 * 1000, ...(signal ? { signal } : {}) }),
   // 查询会话（断点续传）→ { sessionId, status, uploadId, chunkSize, uploadedParts, partsDetail }
   getSession: sessionId => request.get(`/uploads/${sessionId}`),
   // 合并分片、落库、扣配额 → { fileId, alreadyDone }
@@ -69,5 +76,6 @@ export const uploadApi = {
   // 取消上传
   abort: sessionId => request.post(`/uploads/${sessionId}/abort`),
   // 获取 5 分钟预签名下载地址 → { url }
-  getDownloadUrl: fileId => request.get(`/files/${fileId}/download`)
+  getDownloadUrl: fileId => request.get(`/files/${fileId}/download`),
+  getPreviewUrl: fileId => request.get(`/files/${fileId}/download`, { params: { inline: true } })
 }

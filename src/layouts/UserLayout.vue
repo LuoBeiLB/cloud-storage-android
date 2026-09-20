@@ -7,6 +7,7 @@
       </div>
       <el-menu :default-active="route.path" :collapse="isCollapsed" router class="sidebar-menu" @select="handleMenuNavigate">
         <el-menu-item index="/files"><el-icon><FolderOpened /></el-icon><template #title>我的文件</template></el-menu-item>
+        <el-menu-item index="/transfers"><el-icon><Upload /></el-icon><template #title>传输任务</template></el-menu-item>
         <el-menu-item index="/recycle"><el-icon><Delete /></el-icon><template #title>回收站</template></el-menu-item>
         <el-menu-item index="/profile"><el-icon><User /></el-icon><template #title>个人中心</template></el-menu-item>
       </el-menu>
@@ -67,8 +68,10 @@
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElNotification } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
+import { listUploadTasks } from '@/utils/uploadTaskStore'
 import ForcePasswordDialog from '@/components/ForcePasswordDialog.vue'
 
 const route = useRoute()
@@ -90,6 +93,8 @@ function updateViewport() {
 
 onMounted(() => {
   updateViewport()
+  notifyPendingTransfers()
+  userStore.loadProfile().catch(() => {})
   // 平板端（≤1024 且 >768）默认折叠侧边栏
   if (window.innerWidth <= 1024 && window.innerWidth > 768) {
     appStore.sidebarCollapsed = true
@@ -100,6 +105,17 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateViewport)
 })
+
+function notifyPendingTransfers() {
+  const pending = listUploadTasks()
+  if (!pending.length) return
+  ElNotification({
+    title: '有未完成的传输任务',
+    message: `检测到 ${pending.length} 个上传任务未完成，可在左侧「传输任务」中继续。`,
+    type: 'warning',
+    duration: 6000
+  })
+}
 
 function handleMenuClick() {
   if (isMobile.value) {
@@ -117,7 +133,7 @@ function closeMobileMenu() { mobileMenuOpen.value = false }
 
 function formatSize(bytes) {
   if (bytes === 0) return '0 B'
-  const k = 1024, sizes = ['B','KB','MB','GB','TB']
+  const k = 1024, sizes = ['B','KB','MB','GB','TB','PB','EB','ZB','YB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }

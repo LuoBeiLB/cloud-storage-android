@@ -109,6 +109,13 @@ export class Sha256 {
 // 对浏览器 File 流式计算 SHA-256，返回 64 位 hex
 // onProgress: (percent 0-100) => void
 export async function computeSha256(file, onProgress) {
+  // ≤1GB 用浏览器原生 SHA-256（硬件加速，比纯 JS 快一个数量级）
+  const NATIVE_LIMIT = 1024 * 1024 * 1024 // 1GB
+  if (file.size <= NATIVE_LIMIT && typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
+    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+    onProgress?.(100)
+    return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+  }
   const CHUNK = 8 * 1024 * 1024 // 8MB 分片读，避免大文件占满内存
   const hash = new Sha256()
   const total = file.size
