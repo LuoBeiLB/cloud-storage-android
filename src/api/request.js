@@ -26,6 +26,10 @@ request.interceptors.response.use(
     return Promise.reject(new Error(message || '请求失败'))
   },
   error => {
+    // 主动取消的请求（AbortController.abort 暂停上传等）不弹「网络异常」，静默 reject 交回业务层处理
+    if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+      return Promise.reject(error)
+    }
     if (error.response?.status === 401) {
       const refreshToken = localStorage.getItem('cs-refresh-token')
       if (refreshToken && !refreshing && !error.config?._retried) {
