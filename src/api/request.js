@@ -26,6 +26,8 @@ request.interceptors.response.use(
     return Promise.reject(new Error(message || '请求失败'))
   },
   error => {
+    // 用户主动取消（暂停/放弃上传）：静默返回，不弹错误提示
+    if (axios.isCancel(error) || error.code === 'ERR_CANCELED' || error.name === 'AbortError') return Promise.reject(error)
     if (error.response?.status === 401) {
       const refreshToken = localStorage.getItem('cs-refresh-token')
       if (refreshToken && !refreshing && !error.config?._retried) {

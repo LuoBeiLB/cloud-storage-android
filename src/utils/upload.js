@@ -24,6 +24,7 @@ export async function uploadFile(file, parentId, options = {}) {
   // 2. 初始化上传（含秒传分支；后端对相同 sha256 幂等复用未完成 session，支持断点续传）
   const init = await uploadApi.init({ name: file.name, size: file.size, parentId, sha256 })
   if (init.status === 'done') {
+    onSnapshot({ id: sha256, name: file.name, size: file.size, parentId, sha256, sessionId: null, totalParts: 0, doneParts: 0, status: 'done' }) // 秒传也产生一条完成记录
     return { fileId: init.fileId, instant: true }
   }
 
