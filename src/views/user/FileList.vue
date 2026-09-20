@@ -617,10 +617,16 @@ async function toggleSelectAll() {
 // 拉取当前文件夹下所有内容（递归，包含子文件夹内的所有文件）
 async function fetchAllChildren() {
   const list = await fileApi.tree()
+  const validIds = new Set(list.map(n => n.id))
   const childMap = {}
-  list.forEach(n => { (childMap[n.parentId] = childMap[n.parentId] || []).push(n) })
+  list.forEach(n => {
+    // 顶层节点 parentId 可能为 0 / null / 指向不在树中的父 id，统一归到根目录 0（与 buildFolderTree 根判定对齐）
+    const pid = (n.parentId === 0 || n.parentId == null || !validIds.has(n.parentId)) ? 0 : n.parentId
+    ;(childMap[pid] = childMap[pid] || []).push(n)
+  })
   const result = []
-  const queue = [...(childMap[fileStore.currentParentId] || [])]
+  const startId = fileStore.currentParentId == null ? 0 : fileStore.currentParentId
+  const queue = [...(childMap[startId] || [])]
   while (queue.length) {
     const node = queue.shift()
     result.push(node)
