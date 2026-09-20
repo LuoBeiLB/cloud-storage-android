@@ -75,7 +75,7 @@
     <div class="pagination-bar">
       <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]" :total="fileStore.total" layout="total, sizes, prev, pager, next" background @current-change="reload" @size-change="handleSizeChange" />
     </div>
-    <el-dialog v-model="showUploadDialog" title="上传文件" width="min(520px, 92vw)" destroy-on-close>
+    <el-dialog v-model="showUploadDialog" title="上传文件" width="min(520px, 92vw)" destroy-on-close @closed="onUploadDialogClosed">
       <div class="upload-target">
         <div class="upload-target__label">上传到目录（默认「全部文件」）</div>
         <div v-loading="uploadTreeLoading" class="upload-target__tree">
@@ -133,11 +133,11 @@ import { fileApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatSize, formatDate, mapFileNode } from '@/utils/file'
 import { uploadApi } from '@/api'
-import { uploadFile } from '@/utils/upload'
-import { upsertUploadTask, removeUploadTask } from '@/utils/uploadTaskStore'
+import { useTransferStore } from '@/stores/transfer'
 
 const fileStore = useFileStore()
 const userStore = useUserStore()
+const transfer = useTransferStore()
 const searchText = ref('')
 const sortBy = ref('time')
 const viewMode = ref('table')
@@ -149,6 +149,7 @@ const uploadTreeData = ref([])
 const uploadTreeLoading = ref(false)
 const uploadTargetId = ref(0)
 const uploadTargetName = ref('全部文件')
+const activeUploads = ref(0)
 const draggedItem = ref(null)
 const dragOverId = ref(null)
 const dropSuccessId = ref(null)
@@ -463,7 +464,7 @@ function handleUploadNodeClick(node) {
   uploadTargetName.value = node.label
 }
 
-// el-upload 自定义上传：分片上传 + 秒传 + 断点续传
+// el-upload 自定义上传：分片上传 + 秒传 + 断点续传（统一走 transfer store，支持暂停/实时进度）
 function doUpload(options) {
   // 注意：element-plus http-request 的 options.file 就是原始 File（带 uid），没有 .raw 属性
   const raw = options.file
@@ -480,29 +481,33 @@ function doUpload(options) {
     return
   }
   const parentId = uploadTargetId.value ?? 0
-  let snapId = null
-  uploadFile(raw, parentId, {
+  activeUploads.value++
+  transfer.upload(raw, parentId, {
+    // 哈希阶段(本地计算指纹，不发网络请求)映射 0-30%，分片上传映射 30-100%
     onProgress: ({ phase, percent }) => {
-      // 哈希阶段(本地计算指纹，不发网络请求)映射 0-30%，分片上传映射 30-100%
       const total = phase === 'hash' ? Math.round(percent * 0.3) : 30 + Math.round(percent * 0.7)
       options.onProgress({ percent: total })
-    },
-    onSnapshot: snap => {
-      snapId = snap.id
-      upsertUploadTask(snap)
     }
   })
     .then(res => {
-      if (snapId) removeUploadTask(snapId)
       options.onSuccess(res)
-      ElMessage.success(res.instant ? `「${name}」秒传成功` : `「${name}」上传成功`)
       reload()
       userStore.loadProfile().catch(() => {})
     })
     .catch(err => {
-      // 具体错误已由 request 拦截器统一 toast；任务保留在 localStorage 供续传
-      options.onError(err)
+      // 用户主动暂停（AbortError）不算失败；其余错误已由 request 拦截器统一 toast，任务保留在传输任务供续传
+      if (err && err.name !== 'AbortError') options.onError(err)
     })
+    .finally(() => {
+      activeUploads.value--
+    })
+}
+
+// 关闭上传对话框时，若仍有文件在后台上传，提示去「传输任务」查看进度
+function onUploadDialogClosed() {
+  if (activeUploads.value > 0) {
+    ElMessage.info('文件仍在后台上传中，可在「传输任务」页面查看进度')
+  }
 }
 
 async function handleDownload(row) {
