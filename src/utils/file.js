@@ -32,7 +32,7 @@ export function mapFileNode(f, extra = {}) {
 
 export function formatSize(bytes) {
   if (!bytes) return '0 B'
-  const k = 1024, s = ['B', 'KB', 'MB', 'GB', 'TB']
+  const k = 1024, s = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
   let i = Math.floor(Math.log(bytes) / Math.log(k))
   i = Math.max(0, Math.min(i, s.length - 1)) // 边界保护，防止单位 undefined
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + s[i]
