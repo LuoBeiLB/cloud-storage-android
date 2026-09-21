@@ -114,7 +114,9 @@ const sortedTasks = computed(() => {
     const oa = ORDER[transfer.stateOf(a)] ?? 9
     const ob = ORDER[transfer.stateOf(b)] ?? 9
     if (oa !== ob) return oa - ob
-    return (b.updatedAt || 0) - (a.updatedAt || 0) // 同状态：新任务在前
+    // 未完成任务按创建时间锁定位置（进度刷新不再换位）；已完成按完成时间，刚完成的在前
+    const key = t => t.status === 'done' ? (t.updatedAt || 0) : (t.createdAt || t.updatedAt || 0)
+    return key(b) - key(a)
   })
 })
 

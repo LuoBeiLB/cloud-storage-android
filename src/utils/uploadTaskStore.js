@@ -14,7 +14,8 @@ export function listUploadTasks() {
 export function upsertUploadTask(task) {
   const arr = listUploadTasks()
   const idx = arr.findIndex(t => t.id === task.id)
-  const next = { ...task, updatedAt: Date.now() }
+  const prev = idx >= 0 ? arr[idx] : null
+  const next = { ...task, createdAt: prev?.createdAt || task.createdAt || Date.now(), updatedAt: Date.now() } // createdAt 首次写入后锁定，用于传输列表固定排序
   if (idx >= 0) arr[idx] = next
   else arr.push(next)
   localStorage.setItem(KEY, JSON.stringify(arr))
