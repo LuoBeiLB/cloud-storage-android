@@ -82,7 +82,7 @@ import { formatSize, formatDate } from '@/utils/file'
 const users = ref([])
 const total = ref(0)
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const loading = ref(false)
 const searchText = ref('')
 const statusFilter = ref('')

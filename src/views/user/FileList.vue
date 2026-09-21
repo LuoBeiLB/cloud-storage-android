@@ -19,15 +19,11 @@
     </div>
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button v-if="fileStore.total > 0" type="danger" plain :loading="deleting" @click="handleDeleteAll"><el-icon><Delete /></el-icon><span>删除全部文件</span></el-button>
         <el-input v-model="searchText" placeholder="搜索当前页文件..." :prefix-icon="Search" clearable class="search-input" />
       </div>
       <div class="toolbar-right">
-        <el-select v-model="sortBy" class="sort-select">
-          <el-option label="按名称" value="name" />
-          <el-option label="按大小" value="size" />
-          <el-option label="按时间" value="time" />
-        </el-select>
+        <el-button v-if="fileStore.total > 0" type="danger" plain :loading="deleting" @click="handleDeleteAll"><el-icon><Delete /></el-icon><span>删除全部文件</span></el-button>
+
         <el-button-group class="view-switch">
           <el-button :type="viewMode === 'table' ? 'primary' : ''" @click="viewMode = 'table'"><el-icon><List /></el-icon></el-button>
           <el-button :type="viewMode === 'grid' ? 'primary' : ''" @click="viewMode = 'grid'"><el-icon><Grid /></el-icon></el-button>
@@ -35,9 +31,9 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table ref="tableRef" :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ checkStrictly: true, children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px" @selection-change="handleSelectionChange" @select="onRowSelect">
+      <el-table ref="tableRef" :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ checkStrictly: true, children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px" @selection-change="handleSelectionChange" @select="onRowSelect" :default-sort="{ prop: 'updatedAt', order: 'descending' }" @sort-change="handleSortChange">
         <el-table-column type="selection" width="50" />
-        <el-table-column prop="name" label="文件名" min-width="300">
+        <el-table-column prop="name" label="文件名" min-width="300" sortable="custom">
           <template #default="{ row }">
             <div class="file-name-cell" :class="{ 'drop-target': dragOverId === row.id && row.isDir, 'dragging': draggedItem && draggedItem.id === row.id, 'drop-success': dropSuccessId === row.id }" @dblclick="handleOpen(row)" @dragover="row.isDir && handleDragOver(row, $event)" @dragleave="handleDragLeave" @drop="row.isDir && handleDrop(row, $event)">
               <el-icon class="drag-handle" draggable="true" @dragstart="handleDragStart(row, $event)" @dragend="handleDragEnd" :size="14"><Rank /></el-icon>
@@ -46,10 +42,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="size" label="大小" width="120">
+        <el-table-column prop="size" label="大小" width="120" sortable="custom">
           <template #default="{ row }">{{ row.isDir ? '--' : formatSize(row.size) }}</template>
         </el-table-column>
-        <el-table-column prop="updatedAt" label="修改时间" width="180">
+        <el-table-column prop="updatedAt" label="修改时间" width="180" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
@@ -163,10 +159,11 @@ const fileStore = useFileStore()
 const userStore = useUserStore()
 const transfer = useTransferStore()
 const searchText = ref('')
-const sortBy = ref('time')
+const sortField = ref('updatedAt')
+const sortOrder = ref('descending')
 const viewMode = ref('table')
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const showUploadDialog = ref(false)
 const uploadRef = ref(null)
 const uploadTreeRef = ref(null)
@@ -203,24 +200,27 @@ const officeContainer = ref(null)
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
   if (window.innerWidth <= 768) viewMode.value = 'grid'
-  fileStore.loadDir(0, 1, pageSize.value)
+  fileStore.loadDir(0, 1, pageSize.value, 'updatedAt,desc')
 })
 
-// 搜索与排序为当前页本地处理（后端暂无搜索接口）
+// 搜索为当前页本地处理（后端暂无搜索接口；排序已改为后端）
 const filteredFiles = computed(() => {
   let list = [...fileStore.files]
   if (searchText.value) list = list.filter(f => f.name.toLowerCase().includes(searchText.value.toLowerCase()))
-  list.sort((a, b) => {
-    if (a.isDir && !b.isDir) return -1
-    if (!a.isDir && b.isDir) return 1
-    if (sortBy.value === 'name') return a.name.localeCompare(b.name, 'zh-CN')
-    if (sortBy.value === 'size') return (b.size || 0) - (a.size || 0)
-    return new Date(b.updatedAt) - new Date(a.updatedAt)
-  })
   return list
 })
 
-function reload() { fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value) }
+function reload() {
+  const sort = `${sortField.value},${sortOrder.value === 'ascending' ? 'asc' : 'desc'}`
+  fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value, sort)
+}
+
+function handleSortChange({ prop, order }) {
+  sortField.value = prop || 'updatedAt'
+  sortOrder.value = order || 'descending'
+  currentPage.value = 1
+  reload()
+}
 
 // 过滤出"顶层选中节点"：父节点也在选中集合时，子节点会随父级联删，避免重复请求
 function topLevelItems(items) {
@@ -890,7 +890,7 @@ function getFileIconColor(file) {
 .toolbar-left { display: flex; align-items: center; flex: 1; min-width: 0; }
 .toolbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .search-input { width: 240px; }
-.sort-select { width: 140px; }
+
 
 /* 面包屑左侧：返回上一级 + 面包屑 */
 .breadcrumb-left { display: flex; align-items: center; gap: 4px; min-width: 0; }
