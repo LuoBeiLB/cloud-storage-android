@@ -422,11 +422,15 @@ async function handleDeleteAll() {
       if (list.length === 0 || page * size >= total) break
     }
     if (all.length === 0) { ElMessage.info('回收站已为空'); return }
-    const results = await Promise.allSettled(all.map(r => fileApi.remove(r.id, 1)))
+    // 只删顶层节点：后端对文件夹会级联物理删除其子孙，避免父子节点重复删除
+    const targets = topLevelItems(all)
+    const results = await Promise.allSettled(targets.map(r => fileApi.remove(r.id, 1)))
     const ok = results.filter(x => x.status === 'fulfilled').length
-    const fail = results.length - ok
+    const fail = targets.length - ok
     if (fail === 0) ElMessage.success('已彻底删除 ' + ok + ' 项')
     else ElMessage.warning('已彻底删除 ' + ok + ' 项，' + fail + ' 项失败')
+    tableRef.value?.clearSelection()
+    selectedRows.value = []
     await refresh()
     userStore.loadProfile().catch(() => {})
   } finally { deleting.value = false }

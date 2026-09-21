@@ -591,14 +591,16 @@ function onUploadChange(file, fileList) {
 
 // 单次选择 ≤5 个；上传列表（含已完成）同时最多 10 个，超出自动顶替最早的完成记录
 function settleUploadBatch(batch, fileList) {
-  // 单次上限：一次最多 5 个（此刻尚未开始上传，整批移除即干净拦截）
+  // 单次上限：一次最多 5 个，超出部分从末尾截掉（保留前 5 个，不整批拦截）
+  let droppedCount = 0
   if (batch.length > 5) {
-    ElMessage.warning('一次最多选择 5 个文件')
-    batch.forEach(f => uploadRef.value?.handleRemove(f))
-    return
+    droppedCount = batch.length - 5
+    batch.slice(5).forEach(f => uploadRef.value?.handleRemove(f))
+    batch = batch.slice(0, 5)
+    ElMessage.warning(`一次最多上传 5 个文件，已截掉超出的 ${droppedCount} 个`)
   }
-  // 同时上限：列表超过 10 个时，优先顶替最早的完成记录
-  const overflow = fileList.length - 10
+  // 同时上限：列表超过 10 个时，优先顶替最早的完成记录（长度按截取后计）
+  const overflow = (fileList.length - droppedCount) - 10
   if (overflow > 0) {
     const done = fileList.filter(f => f.status === 'success')
     let removed = 0
