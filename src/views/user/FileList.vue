@@ -92,7 +92,7 @@
           />
         </div>
       </div>
-      <el-upload ref="uploadRef" drag multiple :limit="5" :on-exceed="onUploadExceed" :http-request="doUpload" :show-file-list="true" class="upload-box">
+      <el-upload ref="uploadRef" drag multiple :auto-upload="false" :http-request="doUpload" :show-file-list="true" v-model:file-list="uploadFileList" :on-change="onUploadChange" class="upload-box">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
         <template #tip>
@@ -149,7 +149,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { Search, Rank, FolderOpened } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
 import { useUserStore } from '@/stores/user'
@@ -555,9 +555,67 @@ function handleUploadNodeClick(node) {
   uploadTargetName.value = node.label
 }
 
-// 单次上传文件数量上限（最多 5 个）
-function onUploadExceed() {
-  ElMessage.warning('一次最多上传 5 个文件')
+// 上传批次合并：el-upload 对同一次选择的文件在同一 tick 内逐个触发 onChange，
+// 用宏任务合并后拿到整批，便于统一做「单次 ≤5」与「同时 ≤10」校验
+let uploadBatch = []
+let uploadBatchFlush = null
+
+// 受控上传文件列表：用于把「上传中」的文件排到最上面
+const uploadFileList = ref([])
+function uploadSortKey(f) {
+  if (f.status === 'ready' || f.status === 'uploading') return 0
+  if (f.status === 'success') return 1
+  return 2
+}
+watch(uploadFileList, (list) => {
+  const sorted = [...list].sort((a, b) => uploadSortKey(a) - uploadSortKey(b))
+  for (let i = 0; i < list.length; i++) {
+    if (sorted[i].uid !== list[i].uid) {
+      uploadFileList.value = sorted
+      return
+    }
+  }
+}, { deep: true })
+
+function onUploadChange(file, fileList) {
+  uploadBatch.push(file)
+  if (uploadBatchFlush) return
+  uploadBatchFlush = setTimeout(() => {
+    const batch = uploadBatch
+    uploadBatch = []
+    uploadBatchFlush = null
+    settleUploadBatch(batch, fileList)
+  }, 0)
+}
+
+// 单次选择 ≤5 个；上传列表（含已完成）同时最多 10 个，超出自动顶替最早的完成记录
+function settleUploadBatch(batch, fileList) {
+  // 单次上限：一次最多 5 个（此刻尚未开始上传，整批移除即干净拦截）
+  if (batch.length > 5) {
+    ElMessage.warning('一次最多选择 5 个文件')
+    batch.forEach(f => uploadRef.value?.handleRemove(f))
+    return
+  }
+  // 同时上限：列表超过 10 个时，优先顶替最早的完成记录
+  const overflow = fileList.length - 10
+  if (overflow > 0) {
+    const done = fileList.filter(f => f.status === 'success')
+    let removed = 0
+    for (let i = 0; i < done.length && removed < overflow; i++) {
+      uploadRef.value?.handleRemove(done[i])
+      removed++
+    }
+    // 可顶替的完成记录不足时，移除本批末尾多出的文件（未上传，干净）
+    let extra = 0
+    for (let i = batch.length - 1; i >= 0 && removed + extra < overflow; i--) {
+      uploadRef.value?.handleRemove(batch[i])
+      extra++
+    }
+    if (removed > 0) ElMessage.info(`同时最多 10 个文件，已自动移除 ${removed} 个较早的完成记录`)
+    else if (extra > 0) ElMessage.warning('同时上传的文件数量最多 10 个')
+  }
+  // 上传本批剩余（ready 状态）的文件
+  uploadRef.value?.submit()
 }
 
 // el-upload 自定义上传：分片上传 + 秒传 + 断点续传（统一走 transfer store，支持暂停/实时进度）
@@ -588,8 +646,7 @@ function doUpload(options) {
     .then(res => {
       options.onSuccess(res)
       ElMessage.success(`「${name}」上传成功`)
-      // 上传成功后移除该文件卡片，释放 limit 名额，用户无需关闭窗口即可继续选择上传
-      uploadRef.value?.handleRemove(options.file)
+      // 上传成功后保留该文件卡片（显示「已完成」），由后续新上传的文件顶替
       reload()
       userStore.loadProfile().catch(() => {})
     })
