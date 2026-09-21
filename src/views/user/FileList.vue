@@ -19,7 +19,7 @@
     </div>
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button v-if="fileStore.total > 0" plain @click="toggleSelectAll"><span>{{ selectAll ? '取消全选' : '全选' }}</span></el-button>
+        <el-button v-if="fileStore.total > 0" type="danger" plain :loading="deleting" @click="handleDeleteAll"><el-icon><Delete /></el-icon><span>删除全部文件</span></el-button>
         <el-input v-model="searchText" placeholder="搜索当前页文件..." :prefix-icon="Search" clearable class="search-input" />
       </div>
       <div class="toolbar-right">
@@ -184,7 +184,6 @@ const deleting = ref(false)
 const deletingIds = new Set() // 单文件删除按 id 防重复
 let renaming = false // 重命名提交锁
 let creatingFolder = false // 新建文件夹提交锁
-const selectAll = ref(false)
 const tableRef = ref(null)
 const showMoveDialog = ref(false)
 const folderTreeData = ref([])
@@ -357,8 +356,6 @@ async function handleDrop(targetRow, event) {
 // 表格勾选
 function handleSelectionChange(rows) {
   selectedRows.value = rows
-  // 当前层级全部勾选时自动进入「全选」态，手动取消任意项则退出
-  selectAll.value = tableFiles.value.length > 0 && rows.length === tableFiles.value.length
 }
 
 // 批量移动：打开文件夹树弹窗
@@ -649,7 +646,7 @@ function doUpload(options) {
   })
     .then(res => {
       options.onSuccess(res)
-      ElMessage.success(`「${name}」上传成功`)
+      // 成功提示由 transfer store 统一弹出（区分秒传/上传），此处不重复提示
       // 上传成功后保留该文件卡片（显示「已完成」），由后续新上传的文件顶替
       reload()
       userStore.loadProfile().catch(() => {})
@@ -726,7 +723,6 @@ async function handleBatchDelete() {
     const fail = results.length - ok
     if (fail === 0) ElMessage.success('已删除 ' + ok + ' 项（移入回收站）')
     else ElMessage.warning('已删除 ' + ok + ' 项，' + fail + ' 项失败')
-    selectAll.value = false
     selectedRows.value = []
     tableKey.value++
     reload()
@@ -734,10 +730,34 @@ async function handleBatchDelete() {
   } catch (e) { /* 拦截器已提示 */ } finally { deleting.value = false }
 }
 
-// 全选/取消全选：选中当前目录（当前层级）的所有行；删除文件夹时后端会级联处理其子孙
-function toggleSelectAll() {
-  if (selectAll.value) tableRef.value?.clearSelection()
-  else tableRef.value?.toggleAllSelection()
+// 删除全部文件：清空当前文件夹（所有文件与子文件夹一并移入回收站，可恢复）
+async function handleDeleteAll() {
+  try {
+    await ElMessageBox.confirm('确定删除当前文件夹下的全部内容吗？所有文件与子文件夹将一并移入回收站。', '删除全部文件', { confirmButtonText: '删除全部', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
+  deleting.value = true
+  try {
+    const parentId = fileStore.currentParentId
+    const all = []
+    const size = 500
+    for (let page = 1; page <= 200; page++) {
+      const res = await fileApi.listDir({ parent: parentId, page, size })
+      const list = res.list || []
+      all.push(...list)
+      const total = res.total || 0
+      if (list.length === 0 || page * size >= total) break
+    }
+    if (all.length === 0) { ElMessage.info('当前文件夹已为空'); return }
+    const results = await Promise.allSettled(all.map(r => fileApi.remove(r.id, 0)))
+    const ok = results.filter(x => x.status === 'fulfilled').length
+    const fail = results.length - ok
+    if (fail === 0) ElMessage.success('已删除 ' + ok + ' 项（移入回收站）')
+    else ElMessage.warning('已删除 ' + ok + ' 项，' + fail + ' 项失败')
+    selectedRows.value = []
+    tableKey.value++
+    reload()
+    userStore.loadProfile().catch(() => {})
+  } finally { deleting.value = false }
 }
 
 function handleRename(row) {
