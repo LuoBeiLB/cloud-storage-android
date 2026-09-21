@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listUploadTasks, upsertUploadTask, removeUploadTask } from '@/utils/uploadTaskStore'
-import { getCachedFile, removeCachedFile } from '@/utils/uploadFileStore'
+import { getCachedFile, removeCachedFile, cacheFile } from '@/utils/uploadFileStore'
 import { uploadFile } from '@/utils/upload'
 import { uploadApi } from '@/api'
 
@@ -11,6 +11,8 @@ import { uploadApi } from '@/api'
 export const useTransferStore = defineStore('transfer', () => {
   const tasks = ref([])
   const resuming = reactive({}) // task.id -> AbortController（表示该任务正在上传/续传中）
+  const resumeLocks = new Set() // 续传启动锁：await 取缓存窗口内连点「继续」会开出多路并发续传
+  const hashing = reactive({}) // tmpKey -> 哈希百分比（等待上传阶段的指纹计算进度，供传输页展示）
 
   function refresh() {
     tasks.value = listUploadTasks()
@@ -41,18 +43,24 @@ export const useTransferStore = defineStore('transfer', () => {
     let lastSnap = null
     // 立即登记一条「等待上传」记录（哈希计算/初始化阶段）
     upsertUploadTask({ id: tmpKey, name: file.name, size: file.size, parentId, status: 'waiting', totalParts: 0, doneParts: 0 })
+    cacheFile(tmpKey, file) // 选定文件即缓存本体：大文件哈希耗时数分钟，期间暂停后继续也能命中缓存
     refresh()
 
     const clearResume = () => {
       if (resuming[tmpKey] === controller) delete resuming[tmpKey]
+      delete hashing[tmpKey] // 哈希进度随运行态清理
       if (snapId && resuming[snapId] === controller) delete resuming[snapId]
     }
 
     return uploadFile(file, parentId, {
       signal: controller.signal,
-      onProgress,
+      onProgress: p => {
+        if (p.phase === 'hash') hashing[tmpKey] = p.percent // 等待阶段展示「正在校验指纹」进度
+        onProgress && onProgress(p)
+      },
       onSnapshot: snap => {
-        if (snapId !== snap.id) removeUploadTask(tmpKey) // 临时等待记录被正式快照替换
+        if (controller.signal.aborted) return // 已暂停/放弃：丢弃迟到快照，防止已清理的任务复活
+        if (snapId !== snap.id) { removeUploadTask(tmpKey); removeCachedFile(tmpKey); delete hashing[tmpKey] } // 临时记录与缓存被正式快照替换（正式缓存由 upload.js 写入）
         snapId = snap.id
         lastSnap = snap
         if (resuming[tmpKey] === controller) {
@@ -65,10 +73,26 @@ export const useTransferStore = defineStore('transfer', () => {
     })
       .then(res => {
         clearResume()
-        // 完成后保留记录：标记 done（秒传时 onSnapshot 已带 done 快照）
-        const doneSnap = lastSnap || { id: snapId, name: file.name, size: file.size, parentId, status: 'done', totalParts: 0, doneParts: 0 }
-        upsertUploadTask({ ...doneSnap, status: 'done', doneParts: doneSnap.totalParts || 0 })
-        if (snapId) removeCachedFile(snapId)
+        if (controller.signal.aborted) { // 已放弃（如哈希阶段放弃后秒传返回）：不落完成记录，避免任务复活
+          removeUploadTask(snapId || tmpKey)
+          refresh()
+          return res
+        }
+        // 完成后保留记录：显式写入 done（秒传时 lastSnap 可能为 null，直接构造）
+        console.log('[transfer] done写入前: snapId=', snapId, 'tmpKey=', tmpKey, 'lastSnap=', lastSnap, 'instant=', res?.instant, '当前localStorage=', listUploadTasks().map(t => ({ id: t.id, status: t.status })))
+        const doneId = snapId || tmpKey
+        upsertUploadTask({
+          id: doneId,
+          name: file.name,
+          size: file.size,
+          parentId,
+          sha256: lastSnap?.sha256,
+          status: 'done',
+          totalParts: lastSnap?.totalParts || 0,
+          doneParts: lastSnap?.totalParts || 0
+        })
+        console.log('[transfer] done写入后: localStorage=', listUploadTasks().map(t => ({ id: t.id, status: t.status })))
+        refresh()
         refresh()
         ElMessage.success(res.instant ? `「${file.name}」秒传成功` : `「${file.name}」上传成功`)
         return res
@@ -76,6 +100,7 @@ export const useTransferStore = defineStore('transfer', () => {
       .catch(err => {
         clearResume()
         removeUploadTask(tmpKey) // 清理临时等待记录（已有快照时早已被替换，重复删除无害）
+        removeCachedFile(tmpKey) // 同步清理临时缓存（重复删除无害）
         refresh()
         throw err
       })
@@ -83,15 +108,21 @@ export const useTransferStore = defineStore('transfer', () => {
 
   // 续传：优先从 IndexedDB 取回缓存文件本体，无需重新选择；缓存缺失时回退到重新选文件
   async function resumeTask(task) {
-    const cached = await getCachedFile(task.id)
+    if (resumeLocks.has(task.id)) return // 节流：同一任务续传启动中，重复点击直接忽略
+    resumeLocks.add(task.id)
+    const cacheKey = task.sha256 || task.id // 正式记录按内容哈希取缓存；指纹阶段 tmpKey 记录无 sha256，按 tmpKey 取（cacheFile(tmpKey, file) 写入）
+    const cached = await getCachedFile(cacheKey)
     if (cached) {
       ElMessage.info(`正在续传「${task.name}」，已传 ${task.doneParts || 0}/${task.totalParts} 片`)
       removeUploadTask(task.id) // 旧记录先移除，由新上传的快照重建，避免列表双条目
+      removeCachedFile(cacheKey) // 旧缓存一并清理：文件本体已在内存，新上传链路会重建缓存
       refresh()
       upload(cached, task.parentId).catch(() => {})
+      resumeLocks.delete(task.id) // 新任务已同步接管（waiting 态），释放锁
     } else {
       ElMessage.warning(`本地未找到「${task.name}」的缓存，请重新选择同一个文件继续`)
       pickFileForResume(task)
+      resumeLocks.delete(task.id) // 缓存缺失走重选文件，释放锁
     }
   }
 
@@ -126,7 +157,7 @@ export const useTransferStore = defineStore('transfer', () => {
         if (c) c.abort()
         delete resuming[task.id]
         removeUploadTask(task.id)
-        removeCachedFile(task.id)
+        removeCachedFile(task.sha256 || task.id) // tmpKey 记录的缓存挂在 tmpKey 上
         refresh()
       })
       .catch(() => {})
@@ -146,5 +177,5 @@ export const useTransferStore = defineStore('transfer', () => {
 
   refresh()
 
-  return { tasks, resuming, refresh, percent, stateOf, upload, resumeTask, pauseTask, discardTask, removeRecord, clearDone }
+  return { tasks, resuming, hashing, refresh, percent, stateOf, upload, resumeTask, pauseTask, discardTask, removeRecord, clearDone }
 })

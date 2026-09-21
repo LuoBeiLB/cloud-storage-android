@@ -107,7 +107,7 @@ onBeforeUnmount(() => {
 })
 
 function notifyPendingTransfers() {
-  const pending = listUploadTasks()
+  const pending = listUploadTasks().filter(t => t.status !== 'done') // 已完成记录仅保留展示，不算待续传
   if (!pending.length) return
   ElNotification({
     title: '有未完成的传输任务',

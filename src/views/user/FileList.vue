@@ -35,7 +35,7 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table ref="tableRef" :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px" @selection-change="handleSelectionChange">
+      <el-table ref="tableRef" :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ checkStrictly: true, children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px" @selection-change="handleSelectionChange" @select="onRowSelect">
         <el-table-column type="selection" width="50" />
         <el-table-column prop="name" label="文件名" min-width="300">
           <template #default="{ row }">
@@ -92,7 +92,7 @@
           />
         </div>
       </div>
-      <el-upload ref="uploadRef" drag multiple :http-request="doUpload" :show-file-list="true" class="upload-box">
+      <el-upload ref="uploadRef" drag multiple :limit="5" :on-exceed="onUploadExceed" :http-request="doUpload" :show-file-list="true" class="upload-box">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
         <template #tip>
@@ -234,11 +234,80 @@ const tableFiles = computed(() => {
   return filteredFiles.value.map(f => ({ ...f, hasChildren: f.isDir }))
 })
 
+// ---- 勾选规则：勾父带全部子孙；勾子只选自己（不带父/兄弟）；取消任意层文件夹则其父联动取消 ----
+const loadedKids = new Map()
+const nodeById = new Map()
+const checkedDirs = new Set()
+const skipCascadeFor = new Set()
+let isCascading = false
+let unlinking = false
+
+function findNode(id) {
+  return nodeById.get(id) || tableFiles.value.find(f => f.id === id) || null
+}
+
+function kidsOf(row) {
+  return loadedKids.get(row.id) || []
+}
+
+function cascade(row, selected) {
+  for (const child of kidsOf(row)) {
+    isCascading = true
+    tableRef.value?.toggleRowSelection(child, selected)
+    isCascading = false
+    if (child.isDir) {
+      if (selected) checkedDirs.add(child.id); else checkedDirs.delete(child.id)
+      cascade(child, selected)
+    }
+  }
+}
+
+function onRowSelect(selection, row) {
+  if (isCascading || unlinking) return
+  const selected = selection.some(r => r.id === row.id)
+  if (selected) {
+    if (row.isDir) {
+      checkedDirs.add(row.id)
+      cascade(row, true)
+    }
+    return
+  }
+  // 取消：先级联取消自身子树，再一路向上取消所有仍勾选的祖先（含根文件夹）
+  if (row.isDir) {
+    checkedDirs.delete(row.id)
+    cascade(row, false)
+  }
+  const selIds = new Set(selection.map(r => r.id))
+  unlinking = true
+  try {
+    let cur = row
+    while (cur && cur.parentId) {
+      const parent = findNode(cur.parentId)
+      if (!parent) break
+      if (selIds.has(parent.id)) {
+        checkedDirs.delete(parent.id)
+        tableRef.value?.toggleRowSelection(parent, false)
+      }
+      cur = parent
+    }
+  } finally { unlinking = false }
+}
+
 // 懒加载子目录
 async function loadChildren(row, treeNode, resolve) {
   try {
     const res = await fileApi.listDir({ parent: row.id, page: 1, size: 1000 })
     const children = (res.list || []).map(f => mapFileNode(f)).map(f => ({ ...f, hasChildren: f.isDir }))
+    loadedKids.set(row.id, children)
+    children.forEach(c => nodeById.set(c.id, c))
+    if (checkedDirs.has(row.id)) {
+      children.forEach(c => {
+        isCascading = true
+        tableRef.value?.toggleRowSelection(c, true)
+        isCascading = false
+        if (c.isDir) checkedDirs.add(c.id)
+      })
+    }
     resolve(children)
   } catch { resolve([]) }
 }
@@ -486,6 +555,11 @@ function handleUploadNodeClick(node) {
   uploadTargetName.value = node.label
 }
 
+// 单次上传文件数量上限（最多 5 个）
+function onUploadExceed() {
+  ElMessage.warning('一次最多上传 5 个文件')
+}
+
 // el-upload 自定义上传：分片上传 + 秒传 + 断点续传（统一走 transfer store，支持暂停/实时进度）
 function doUpload(options) {
   // 注意：element-plus http-request 的 options.file 就是原始 File（带 uid），没有 .raw 属性
@@ -513,6 +587,9 @@ function doUpload(options) {
   })
     .then(res => {
       options.onSuccess(res)
+      ElMessage.success(`「${name}」上传成功`)
+      // 上传成功后移除该文件卡片，释放 limit 名额，用户无需关闭窗口即可继续选择上传
+      uploadRef.value?.handleRemove(options.file)
       reload()
       userStore.loadProfile().catch(() => {})
     })
