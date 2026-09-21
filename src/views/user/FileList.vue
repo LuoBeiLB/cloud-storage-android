@@ -92,7 +92,7 @@
           />
         </div>
       </div>
-      <el-upload ref="uploadRef" drag multiple :http-request="doUpload" :show-file-list="true" class="upload-box">
+      <el-upload ref="uploadRef" drag multiple :limit="5" :on-exceed="onUploadExceed" :http-request="doUpload" :show-file-list="true" class="upload-box">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
         <template #tip>
@@ -484,6 +484,11 @@ async function openUploadDialog() {
 function handleUploadNodeClick(node) {
   uploadTargetId.value = node.id
   uploadTargetName.value = node.label
+}
+
+// 单次上传文件数量上限（最多 5 个）
+function onUploadExceed() {
+  ElMessage.warning('一次最多上传 5 个文件，超出部分已忽略')
 }
 
 // el-upload 自定义上传：分片上传 + 秒传 + 断点续传（统一走 transfer store，支持暂停/实时进度）
