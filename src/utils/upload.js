@@ -17,6 +17,8 @@ const PART_RETRY = 2
 
 export async function uploadFile(file, parentId, options = {}) {
   const { onProgress = () => {}, onSnapshot = () => {}, signal } = options
+  // 记录 ID 每次上传唯一：同文件重复上传（含秒传）在传输列表各留一条记录
+  const recordId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 
   // 1. 计算文件 SHA-256（B 组内容寻址，必填）
   const sha256 = await computeSha256(file, p => onProgress({ phase: 'hash', percent: p }))
@@ -24,7 +26,7 @@ export async function uploadFile(file, parentId, options = {}) {
   // 2. 初始化上传（含秒传分支；后端对相同 sha256 幂等复用未完成 session，支持断点续传）
   const init = await uploadApi.init({ name: file.name, size: file.size, parentId, sha256 })
   if (init.status === 'done') {
-    onSnapshot({ id: sha256, name: file.name, size: file.size, parentId, sha256, sessionId: null, totalParts: 0, doneParts: 0, status: 'done' }) // 秒传也产生一条完成记录
+    onSnapshot({ id: recordId, name: file.name, size: file.size, parentId, sha256, sessionId: null, totalParts: 0, doneParts: 0, status: 'done' }) // 秒传也产生一条完成记录；id 每次唯一：重复上传各留一条
     return { fileId: init.fileId, instant: true }
   }
 
@@ -33,7 +35,7 @@ export async function uploadFile(file, parentId, options = {}) {
   cacheFile(sha256, file)
   const totalParts = Math.ceil(file.size / chunkSize)
   const emit = doneParts => onSnapshot({
-    id: sha256,
+    id: recordId, // 记录 ID 每次唯一：重复上传各留一条
     name: file.name,
     size: file.size,
     parentId,
