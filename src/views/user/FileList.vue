@@ -181,6 +181,9 @@ const dropSuccessId = ref(null)
 const tableKey = ref(0)
 const selectedRows = ref([])
 const deleting = ref(false)
+const deletingIds = new Set() // 单文件删除按 id 防重复
+let renaming = false // 重命名提交锁
+let creatingFolder = false // 新建文件夹提交锁
 const selectAll = ref(false)
 const tableRef = ref(null)
 const showMoveDialog = ref(false)
@@ -434,6 +437,7 @@ function handleOpen(row) {
 
 // 在线预览：复用下载预签名 URL，按文件类型渲染
 async function openPreview(row) {
+  if (previewLoading.value) return // 预览加载中，忽略重复触发（防双击/连点重复请求）
   const type = row.type
   if (type === 'word' || type === 'excel' || type === 'ppt') {
     previewFile.value = row
@@ -703,7 +707,9 @@ async function handleDownload(row) {
 }
 
 function handleDelete(id) {
-  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload(); userStore.loadProfile().catch(() => {}) }).catch(() => {})
+  if (deletingIds.has(id)) return // 防连点重复删除
+  deletingIds.add(id)
+  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload(); userStore.loadProfile().catch(() => {}) }).catch(() => {}).finally(() => { deletingIds.delete(id) })
 }
 
 // 批量删除勾选项（移入回收站，可恢复）
@@ -737,18 +743,22 @@ function toggleSelectAll() {
 function handleRename(row) {
   ElMessageBox.prompt('请输入新名称', '重命名', { inputValue: row.name, confirmButtonText: '确定', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
     .then(({ value }) => {
-      fileStore.rename(row.id, value.trim()).then(() => { ElMessage.success('重命名成功'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {})
+      if (renaming) return // 防连点重复提交
+      renaming = true
+      fileStore.rename(row.id, value.trim()).then(() => { ElMessage.success('重命名成功'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {}).finally(() => { renaming = false })
     }).catch(() => {})
 }
 
 function handleNewFolder() {
   ElMessageBox.prompt('请输入文件夹名称', '新建文件夹', { confirmButtonText: '创建', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
     .then(({ value }) => {
+      if (creatingFolder) return // 防连点重复提交
+      creatingFolder = true
       fileStore.createFolder(value.trim()).then(res => {
         // 后端同级重名会自动改名，返回实际创建的名称
         ElMessage.success(res?.name ? `已创建「${res.name}」` : '文件夹已创建')
         reload()
-      }).catch(() => {})
+      }).catch(() => {}).finally(() => { creatingFolder = false })
     }).catch(() => {})
 }
 
