@@ -680,8 +680,13 @@ function onUploadDialogClosed() {
   }
 }
 
+// 下载节流：同一文件短时间内重复点击只触发一次（防快速连点/双击触发重复请求）
+const downloadLast = new Map()
 async function handleDownload(row) {
   if (row.isDir) { ElMessage.warning('文件夹暂不支持下载'); return }
+  const now = Date.now()
+  if (now - (downloadLast.get(row.id) || 0) < 1000) return
+  downloadLast.set(row.id, now)
   try {
     const { url } = await uploadApi.getDownloadUrl(row.id)
     // 预签名 URL（5 分钟有效）为跨域直链，用 a 标签触发；
