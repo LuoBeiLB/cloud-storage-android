@@ -79,7 +79,6 @@ export const useTransferStore = defineStore('transfer', () => {
           return res
         }
         // 完成后保留记录：显式写入 done（秒传时 lastSnap 可能为 null，直接构造）
-        console.log('[transfer] done写入前: snapId=', snapId, 'tmpKey=', tmpKey, 'lastSnap=', lastSnap, 'instant=', res?.instant, '当前localStorage=', listUploadTasks().map(t => ({ id: t.id, status: t.status })))
         const doneId = snapId || tmpKey
         upsertUploadTask({
           id: doneId,
@@ -91,8 +90,6 @@ export const useTransferStore = defineStore('transfer', () => {
           totalParts: lastSnap?.totalParts || 0,
           doneParts: lastSnap?.totalParts || 0
         })
-        console.log('[transfer] done写入后: localStorage=', listUploadTasks().map(t => ({ id: t.id, status: t.status })))
-        refresh()
         refresh()
         ElMessage.success(res.instant ? `「${file.name}」秒传成功` : `「${file.name}」上传成功`)
         return res
