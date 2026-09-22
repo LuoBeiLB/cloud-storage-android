@@ -647,6 +647,11 @@ function doUpload(options) {
     }
   })
     .then(res => {
+      if (res && res.skipped) {
+        // 内容已在传输中：移除这个重复的空转卡片，不标记成功（提示已由 transfer 层弹出）
+        uploadRef.value?.handleRemove(options.file)
+        return
+      }
       options.onSuccess(res)
       // 成功提示由 transfer store 统一弹出（区分秒传/上传），此处不重复提示
       // 上传成功后保留该文件卡片（显示「已完成」），由后续新上传的文件顶替
