@@ -12,6 +12,7 @@ export const useTransferStore = defineStore('transfer', () => {
   const tasks = ref([])
   const resuming = reactive({}) // task.id -> AbortController（表示该任务正在上传/续传中）
   const resumeLocks = new Set() // 续传启动锁：await 取缓存窗口内连点「继续」会开出多路并发续传
+  const uploadingSha = new Set() // sha256 -> 正在上传（内容级去重，防同文件重复起实例走到 MinIO 合并）
   const hashing = reactive({}) // tmpKey -> 哈希百分比（等待上传阶段的指纹计算进度，供传输页展示）
 
   function refresh() {
@@ -41,6 +42,7 @@ export const useTransferStore = defineStore('transfer', () => {
     resuming[tmpKey] = controller
     let snapId = null
     let lastSnap = null
+    let lastSha = null // 本实例内容哈希：done/fail 时从 uploadingSha 摘除
     // 立即登记一条「等待上传」记录（哈希计算/初始化阶段）
     upsertUploadTask({ id: tmpKey, name: file.name, size: file.size, parentId, status: 'waiting', totalParts: 0, doneParts: 0 })
     cacheFile(tmpKey, file) // 选定文件即缓存本体：大文件哈希耗时数分钟，期间暂停后继续也能命中缓存
@@ -50,10 +52,21 @@ export const useTransferStore = defineStore('transfer', () => {
       if (resuming[tmpKey] === controller) delete resuming[tmpKey]
       delete hashing[tmpKey] // 哈希进度随运行态清理
       if (snapId && resuming[snapId] === controller) delete resuming[snapId]
+      if (lastSha) uploadingSha.delete(lastSha) // 结束（done/fail）后释放内容级锁
     }
 
     return uploadFile(file, parentId, {
       signal: controller.signal,
+      // 内容级去重：哈希算完、init 之前判断，同内容已在传则跳过本实例，避免两个实例都走到 MinIO 合并导致后者失败
+      onBeforeInit: sha => {
+        if (uploadingSha.has(sha)) {
+          ElMessage.warning('「' + file.name + '」已在传输中，请勿重复发起')
+          return false
+        }
+        uploadingSha.add(sha)
+        lastSha = sha
+        return true
+      },
       onProgress: p => {
         if (p.phase === 'hash') hashing[tmpKey] = p.percent // 等待阶段展示「正在校验指纹」进度
         onProgress && onProgress(p)
@@ -73,13 +86,18 @@ export const useTransferStore = defineStore('transfer', () => {
     })
       .then(res => {
         clearResume()
+        if (res.skipped) { // 内容已在传：跳过本实例，清理临时等待记录与缓存，不落完成记录、不提示成功
+          removeUploadTask(tmpKey)
+          removeCachedFile(tmpKey)
+          refresh()
+          return res
+        }
         if (controller.signal.aborted) { // 已放弃（如哈希阶段放弃后秒传返回）：不落完成记录，避免任务复活
           removeUploadTask(snapId || tmpKey)
           refresh()
           return res
         }
         // 完成后保留记录：显式写入 done（秒传时 lastSnap 可能为 null，直接构造）
-        console.log('[transfer] done写入前: snapId=', snapId, 'tmpKey=', tmpKey, 'lastSnap=', lastSnap, 'instant=', res?.instant, '当前localStorage=', listUploadTasks().map(t => ({ id: t.id, status: t.status })))
         const doneId = snapId || tmpKey
         upsertUploadTask({
           id: doneId,
@@ -91,8 +109,6 @@ export const useTransferStore = defineStore('transfer', () => {
           totalParts: lastSnap?.totalParts || 0,
           doneParts: lastSnap?.totalParts || 0
         })
-        console.log('[transfer] done写入后: localStorage=', listUploadTasks().map(t => ({ id: t.id, status: t.status })))
-        refresh()
         refresh()
         ElMessage.success(res.instant ? `「${file.name}」秒传成功` : `「${file.name}」上传成功`)
         return res
@@ -108,6 +124,8 @@ export const useTransferStore = defineStore('transfer', () => {
 
   // 续传：优先从 IndexedDB 取回缓存文件本体，无需重新选择；缓存缺失时回退到重新选文件
   async function resumeTask(task) {
+    if (resuming[task.id]) return // 该任务正在传输中，不重复续传
+    if (task.sha256 && uploadingSha.has(task.sha256)) return // 同内容已有实例在传，不重复续传
     if (resumeLocks.has(task.id)) return // 节流：同一任务续传启动中，重复点击直接忽略
     resumeLocks.add(task.id)
     const cacheKey = task.sha256 || task.id // 正式记录按内容哈希取缓存；指纹阶段 tmpKey 记录无 sha256，按 tmpKey 取（cacheFile(tmpKey, file) 写入）

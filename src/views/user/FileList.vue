@@ -19,15 +19,11 @@
     </div>
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button v-if="fileStore.total > 0" plain @click="toggleSelectAll"><span>{{ selectAll ? '取消全选' : '全选' }}</span></el-button>
         <el-input v-model="searchText" placeholder="搜索当前页文件..." :prefix-icon="Search" clearable class="search-input" />
       </div>
       <div class="toolbar-right">
-        <el-select v-model="sortBy" class="sort-select">
-          <el-option label="按名称" value="name" />
-          <el-option label="按大小" value="size" />
-          <el-option label="按时间" value="time" />
-        </el-select>
+        <el-button v-if="fileStore.total > 0" type="danger" plain :loading="deleting" @click="handleDeleteAll"><el-icon><Delete /></el-icon><span>删除全部文件</span></el-button>
+
         <el-button-group class="view-switch">
           <el-button :type="viewMode === 'table' ? 'primary' : ''" @click="viewMode = 'table'"><el-icon><List /></el-icon></el-button>
           <el-button :type="viewMode === 'grid' ? 'primary' : ''" @click="viewMode = 'grid'"><el-icon><Grid /></el-icon></el-button>
@@ -35,9 +31,9 @@
       </div>
     </div>
     <div v-if="viewMode === 'table'" class="file-table cs-card">
-      <el-table ref="tableRef" :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ checkStrictly: true, children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px" @selection-change="handleSelectionChange" @select="onRowSelect">
+      <el-table ref="tableRef" :key="tableKey" :data="tableFiles" v-loading="fileStore.loading" lazy row-key="id" :tree-props="{ checkStrictly: true, children: 'children', hasChildren: 'hasChildren' }" :load="loadChildren" style="width: 100%; min-width: 720px" @selection-change="handleSelectionChange" @select="onRowSelect" :default-sort="{ prop: 'updatedAt', order: 'descending' }" @sort-change="handleSortChange">
         <el-table-column type="selection" width="50" />
-        <el-table-column prop="name" label="文件名" min-width="300">
+        <el-table-column prop="name" label="文件名" min-width="300" sortable="custom">
           <template #default="{ row }">
             <div class="file-name-cell" :class="{ 'drop-target': dragOverId === row.id && row.isDir, 'dragging': draggedItem && draggedItem.id === row.id, 'drop-success': dropSuccessId === row.id }" @dblclick="handleOpen(row)" @dragover="row.isDir && handleDragOver(row, $event)" @dragleave="handleDragLeave" @drop="row.isDir && handleDrop(row, $event)">
               <el-icon class="drag-handle" draggable="true" @dragstart="handleDragStart(row, $event)" @dragend="handleDragEnd" :size="14"><Rank /></el-icon>
@@ -46,10 +42,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="size" label="大小" width="120">
+        <el-table-column prop="size" label="大小" width="120" sortable="custom">
           <template #default="{ row }">{{ row.isDir ? '--' : formatSize(row.size) }}</template>
         </el-table-column>
-        <el-table-column prop="updatedAt" label="修改时间" width="180">
+        <el-table-column prop="updatedAt" label="修改时间" width="180" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
@@ -92,7 +88,7 @@
           />
         </div>
       </div>
-      <el-upload ref="uploadRef" drag multiple :limit="5" :on-exceed="onUploadExceed" :http-request="doUpload" :show-file-list="true" class="upload-box">
+      <el-upload ref="uploadRef" drag multiple :auto-upload="false" :http-request="doUpload" :show-file-list="true" v-model:file-list="uploadFileList" :on-change="onUploadChange" class="upload-box">
         <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
         <template #tip>
@@ -149,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { Search, Rank, FolderOpened } from '@element-plus/icons-vue'
 import { useFileStore } from '@/stores/file'
 import { useUserStore } from '@/stores/user'
@@ -163,10 +159,11 @@ const fileStore = useFileStore()
 const userStore = useUserStore()
 const transfer = useTransferStore()
 const searchText = ref('')
-const sortBy = ref('time')
+const sortField = ref('updatedAt')
+const sortOrder = ref('descending')
 const viewMode = ref('table')
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const showUploadDialog = ref(false)
 const uploadRef = ref(null)
 const uploadTreeRef = ref(null)
@@ -181,7 +178,9 @@ const dropSuccessId = ref(null)
 const tableKey = ref(0)
 const selectedRows = ref([])
 const deleting = ref(false)
-const selectAll = ref(false)
+const deletingIds = new Set() // 单文件删除按 id 防重复
+let renaming = false // 重命名提交锁
+let creatingFolder = false // 新建文件夹提交锁
 const tableRef = ref(null)
 const showMoveDialog = ref(false)
 const folderTreeData = ref([])
@@ -201,24 +200,27 @@ const officeContainer = ref(null)
 onMounted(() => {
   // 移动端默认用网格视图，更适配小屏
   if (window.innerWidth <= 768) viewMode.value = 'grid'
-  fileStore.loadDir(0, 1, pageSize.value)
+  fileStore.loadDir(0, 1, pageSize.value, 'updatedAt,desc')
 })
 
-// 搜索与排序为当前页本地处理（后端暂无搜索接口）
+// 搜索为当前页本地处理（后端暂无搜索接口；排序已改为后端）
 const filteredFiles = computed(() => {
   let list = [...fileStore.files]
   if (searchText.value) list = list.filter(f => f.name.toLowerCase().includes(searchText.value.toLowerCase()))
-  list.sort((a, b) => {
-    if (a.isDir && !b.isDir) return -1
-    if (!a.isDir && b.isDir) return 1
-    if (sortBy.value === 'name') return a.name.localeCompare(b.name, 'zh-CN')
-    if (sortBy.value === 'size') return (b.size || 0) - (a.size || 0)
-    return new Date(b.updatedAt) - new Date(a.updatedAt)
-  })
   return list
 })
 
-function reload() { fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value) }
+function reload() {
+  const sort = `${sortField.value},${sortOrder.value === 'ascending' ? 'asc' : 'desc'}`
+  fileStore.loadDir(fileStore.currentParentId, currentPage.value, pageSize.value, sort)
+}
+
+function handleSortChange({ prop, order }) {
+  sortField.value = prop || 'updatedAt'
+  sortOrder.value = order || 'descending'
+  currentPage.value = 1
+  reload()
+}
 
 // 过滤出"顶层选中节点"：父节点也在选中集合时，子节点会随父级联删，避免重复请求
 function topLevelItems(items) {
@@ -354,8 +356,6 @@ async function handleDrop(targetRow, event) {
 // 表格勾选
 function handleSelectionChange(rows) {
   selectedRows.value = rows
-  // 当前层级全部勾选时自动进入「全选」态，手动取消任意项则退出
-  selectAll.value = tableFiles.value.length > 0 && rows.length === tableFiles.value.length
 }
 
 // 批量移动：打开文件夹树弹窗
@@ -434,6 +434,7 @@ function handleOpen(row) {
 
 // 在线预览：复用下载预签名 URL，按文件类型渲染
 async function openPreview(row) {
+  if (previewLoading.value) return // 预览加载中，忽略重复触发（防双击/连点重复请求）
   const type = row.type
   if (type === 'word' || type === 'excel' || type === 'ppt') {
     previewFile.value = row
@@ -555,9 +556,69 @@ function handleUploadNodeClick(node) {
   uploadTargetName.value = node.label
 }
 
-// 单次上传文件数量上限（最多 5 个）
-function onUploadExceed() {
-  ElMessage.warning('一次最多上传 5 个文件')
+// 上传批次合并：el-upload 对同一次选择的文件在同一 tick 内逐个触发 onChange，
+// 用宏任务合并后拿到整批，便于统一做「单次 ≤5」与「同时 ≤10」校验
+let uploadBatch = []
+let uploadBatchFlush = null
+
+// 受控上传文件列表：用于把「上传中」的文件排到最上面
+const uploadFileList = ref([])
+function uploadSortKey(f) {
+  if (f.status === 'ready' || f.status === 'uploading') return 0
+  if (f.status === 'success') return 1
+  return 2
+}
+watch(uploadFileList, (list) => {
+  const sorted = [...list].sort((a, b) => uploadSortKey(a) - uploadSortKey(b))
+  for (let i = 0; i < list.length; i++) {
+    if (sorted[i].uid !== list[i].uid) {
+      uploadFileList.value = sorted
+      return
+    }
+  }
+}, { deep: true })
+
+function onUploadChange(file, fileList) {
+  uploadBatch.push(file)
+  if (uploadBatchFlush) return
+  uploadBatchFlush = setTimeout(() => {
+    const batch = uploadBatch
+    uploadBatch = []
+    uploadBatchFlush = null
+    settleUploadBatch(batch, fileList)
+  }, 0)
+}
+
+// 单次选择 ≤5 个；上传列表（含已完成）同时最多 10 个，超出自动顶替最早的完成记录
+function settleUploadBatch(batch, fileList) {
+  // 单次上限：一次最多 5 个，超出部分从末尾截掉（保留前 5 个，不整批拦截）
+  let droppedCount = 0
+  if (batch.length > 5) {
+    droppedCount = batch.length - 5
+    batch.slice(5).forEach(f => uploadRef.value?.handleRemove(f))
+    batch = batch.slice(0, 5)
+    ElMessage.warning(`一次最多上传 5 个文件，已截掉超出的 ${droppedCount} 个`)
+  }
+  // 同时上限：列表超过 10 个时，优先顶替最早的完成记录（长度按截取后计）
+  const overflow = (fileList.length - droppedCount) - 10
+  if (overflow > 0) {
+    const done = fileList.filter(f => f.status === 'success')
+    let removed = 0
+    for (let i = 0; i < done.length && removed < overflow; i++) {
+      uploadRef.value?.handleRemove(done[i])
+      removed++
+    }
+    // 可顶替的完成记录不足时，移除本批末尾多出的文件（未上传，干净）
+    let extra = 0
+    for (let i = batch.length - 1; i >= 0 && removed + extra < overflow; i--) {
+      uploadRef.value?.handleRemove(batch[i])
+      extra++
+    }
+    if (removed > 0) ElMessage.info(`同时最多 10 个文件，已自动移除 ${removed} 个较早的完成记录`)
+    else if (extra > 0) ElMessage.warning('同时上传的文件数量最多 10 个')
+  }
+  // 上传本批剩余（ready 状态）的文件
+  uploadRef.value?.submit()
 }
 
 // el-upload 自定义上传：分片上传 + 秒传 + 断点续传（统一走 transfer store，支持暂停/实时进度）
@@ -586,10 +647,14 @@ function doUpload(options) {
     }
   })
     .then(res => {
+      if (res && res.skipped) {
+        // 内容已在传输中：移除这个重复的空转卡片，不标记成功（提示已由 transfer 层弹出）
+        uploadRef.value?.handleRemove(options.file)
+        return
+      }
       options.onSuccess(res)
-      ElMessage.success(`「${name}」上传成功`)
-      // 上传成功后移除该文件卡片，释放 limit 名额，用户无需关闭窗口即可继续选择上传
-      uploadRef.value?.handleRemove(options.file)
+      // 成功提示由 transfer store 统一弹出（区分秒传/上传），此处不重复提示
+      // 上传成功后保留该文件卡片（显示「已完成」），由后续新上传的文件顶替
       reload()
       userStore.loadProfile().catch(() => {})
     })
@@ -623,8 +688,13 @@ function onUploadDialogClosed() {
   }
 }
 
+// 下载节流：同一文件短时间内重复点击只触发一次（防快速连点/双击触发重复请求）
+const downloadLast = new Map()
 async function handleDownload(row) {
   if (row.isDir) { ElMessage.warning('文件夹暂不支持下载'); return }
+  const now = Date.now()
+  if (now - (downloadLast.get(row.id) || 0) < 1000) return
+  downloadLast.set(row.id, now)
   try {
     const { url } = await uploadApi.getDownloadUrl(row.id)
     // 预签名 URL（5 分钟有效）为跨域直链，用 a 标签触发；
@@ -641,7 +711,9 @@ async function handleDownload(row) {
 }
 
 function handleDelete(id) {
-  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload(); userStore.loadProfile().catch(() => {}) }).catch(() => {})
+  if (deletingIds.has(id)) return // 防连点重复删除
+  deletingIds.add(id)
+  fileStore.remove(id).then(() => { ElMessage.success('已移入回收站'); selectedRows.value = []; tableKey.value++; reload(); userStore.loadProfile().catch(() => {}) }).catch(() => {}).finally(() => { deletingIds.delete(id) })
 }
 
 // 批量删除勾选项（移入回收站，可恢复）
@@ -658,7 +730,6 @@ async function handleBatchDelete() {
     const fail = results.length - ok
     if (fail === 0) ElMessage.success('已删除 ' + ok + ' 项（移入回收站）')
     else ElMessage.warning('已删除 ' + ok + ' 项，' + fail + ' 项失败')
-    selectAll.value = false
     selectedRows.value = []
     tableKey.value++
     reload()
@@ -666,27 +737,55 @@ async function handleBatchDelete() {
   } catch (e) { /* 拦截器已提示 */ } finally { deleting.value = false }
 }
 
-// 全选/取消全选：选中当前目录（当前层级）的所有行；删除文件夹时后端会级联处理其子孙
-function toggleSelectAll() {
-  if (selectAll.value) tableRef.value?.clearSelection()
-  else tableRef.value?.toggleAllSelection()
+// 删除全部文件：清空当前文件夹（所有文件与子文件夹一并移入回收站，可恢复）
+async function handleDeleteAll() {
+  try {
+    await ElMessageBox.confirm('确定删除当前文件夹下的全部内容吗？所有文件与子文件夹将一并移入回收站。', '删除全部文件', { confirmButtonText: '删除全部', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
+  deleting.value = true
+  try {
+    const parentId = fileStore.currentParentId
+    const all = []
+    const size = 500
+    for (let page = 1; page <= 200; page++) {
+      const res = await fileApi.listDir({ parent: parentId, page, size })
+      const list = res.list || []
+      all.push(...list)
+      const total = res.total || 0
+      if (list.length === 0 || page * size >= total) break
+    }
+    if (all.length === 0) { ElMessage.info('当前文件夹已为空'); return }
+    const results = await Promise.allSettled(all.map(r => fileApi.remove(r.id, 0)))
+    const ok = results.filter(x => x.status === 'fulfilled').length
+    const fail = results.length - ok
+    if (fail === 0) ElMessage.success('已删除 ' + ok + ' 项（移入回收站）')
+    else ElMessage.warning('已删除 ' + ok + ' 项，' + fail + ' 项失败')
+    selectedRows.value = []
+    tableKey.value++
+    reload()
+    userStore.loadProfile().catch(() => {})
+  } finally { deleting.value = false }
 }
 
 function handleRename(row) {
   ElMessageBox.prompt('请输入新名称', '重命名', { inputValue: row.name, confirmButtonText: '确定', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
     .then(({ value }) => {
-      fileStore.rename(row.id, value.trim()).then(() => { ElMessage.success('重命名成功'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {})
+      if (renaming) return // 防连点重复提交
+      renaming = true
+      fileStore.rename(row.id, value.trim()).then(() => { ElMessage.success('重命名成功'); selectedRows.value = []; tableKey.value++; reload() }).catch(() => {}).finally(() => { renaming = false })
     }).catch(() => {})
 }
 
 function handleNewFolder() {
   ElMessageBox.prompt('请输入文件夹名称', '新建文件夹', { confirmButtonText: '创建', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
     .then(({ value }) => {
+      if (creatingFolder) return // 防连点重复提交
+      creatingFolder = true
       fileStore.createFolder(value.trim()).then(res => {
         // 后端同级重名会自动改名，返回实际创建的名称
         ElMessage.success(res?.name ? `已创建「${res.name}」` : '文件夹已创建')
         reload()
-      }).catch(() => {})
+      }).catch(() => {}).finally(() => { creatingFolder = false })
     }).catch(() => {})
 }
 
@@ -798,7 +897,7 @@ function getFileIconColor(file) {
 .toolbar-left { display: flex; align-items: center; flex: 1; min-width: 0; }
 .toolbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .search-input { width: 240px; }
-.sort-select { width: 140px; }
+
 
 /* 面包屑左侧：返回上一级 + 面包屑 */
 .breadcrumb-left { display: flex; align-items: center; gap: 4px; min-width: 0; }

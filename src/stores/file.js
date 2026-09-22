@@ -11,18 +11,22 @@ export const useFileStore = defineStore('file', () => {
   const loading = ref(false)
 
   // 加载目录：后端返回 { total, list: FileNodeVO[], breadcrumb: [{id, name}] }
-  async function loadDir(parentId = currentParentId.value, page = 1, size = 20) {
+  // 请求序列号：快速切换目录/分页时只采纳最新请求的结果，避免旧请求晚返回覆盖新数据
+  let loadSeq = 0
+  async function loadDir(parentId = currentParentId.value, page = 1, size = 20, sort = null) {
+    const seq = ++loadSeq
     loading.value = true
     currentParentId.value = parentId
     try {
-      const res = await fileApi.listDir({ parent: parentId, page, size })
+      const res = await fileApi.listDir({ parent: parentId, page, size, ...(sort ? { sort } : {}) })
+      if (seq !== loadSeq) return
       files.value = (res.list || []).map(f => mapFileNode(f))
       total.value = res.total || 0
       breadcrumb.value = [{ id: 0, name: '全部文件' }, ...(res.breadcrumb || [])]
     } catch (e) {
       // 拦截器已提示错误，保留旧数据
     } finally {
-      loading.value = false
+      if (seq === loadSeq) loading.value = false
     }
   }
 

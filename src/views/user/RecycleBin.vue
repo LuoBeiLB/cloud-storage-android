@@ -11,8 +11,8 @@
         <el-button v-if="selectedRows.length > 0" type="danger" plain :loading="deleting" @click="handleBatchDelete">
           <el-icon><Delete /></el-icon><span>彻底删除（{{ selectedRows.length }}）</span>
         </el-button>
-        <el-button v-if="recycleTotal > 0" plain @click="toggleSelectAll">
-          <span>{{ selectAll ? '取消全选' : '全选' }}</span>
+        <el-button v-if="recycleTotal > 0" type="danger" plain :loading="deleting" @click="handleDeleteAll">
+          <el-icon><Delete /></el-icon><span>删除全部文件</span>
         </el-button>
       </div>
     </div>
@@ -140,7 +140,6 @@ const pageSize = ref(10)                  // 默认每页 10 条
 const loading = ref(false)
 const searchText = ref('')
 const selectedRows = ref([])
-const selectAll = ref(false)
 const deleting = ref(false)
 const tableRef = ref(null)
 const tableKey = ref(0)
@@ -404,18 +403,37 @@ function handleOpen(row) {
 
 function handleSelectionChange(rows) {
   selectedRows.value = rows
-  const topIds = new Set(tableFiles.value.map(r => r.id))
-  const selectedTop = rows.filter(r => topIds.has(r.id))
-  selectAll.value = tableFiles.value.length > 0 && selectedTop.length === tableFiles.value.length
 }
 
-function toggleSelectAll() {
-  if (selectAll.value) {
+// 删除全部文件：彻底删除回收站中的全部内容（不可恢复）
+async function handleDeleteAll() {
+  try {
+    await ElMessageBox.confirm('确定彻底删除回收站中的全部内容吗？此操作不可恢复。', '删除全部文件', { confirmButtonText: '彻底删除', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
+  deleting.value = true
+  try {
+    const all = []
+    const size = 500
+    for (let page = 1; page <= 200; page++) {
+      const res = await fileApi.trash({ page, size })
+      const list = res.list || []
+      all.push(...list)
+      const total = res.total || 0
+      if (list.length === 0 || page * size >= total) break
+    }
+    if (all.length === 0) { ElMessage.info('回收站已为空'); return }
+    // 只删顶层节点：后端对文件夹会级联物理删除其子孙，避免父子节点重复删除
+    const targets = topLevelItems(all)
+    const results = await Promise.allSettled(targets.map(r => fileApi.remove(r.id, 1)))
+    const ok = results.filter(x => x.status === 'fulfilled').length
+    const fail = targets.length - ok
+    if (fail === 0) ElMessage.success('已彻底删除 ' + ok + ' 项')
+    else ElMessage.warning('已彻底删除 ' + ok + ' 项，' + fail + ' 项失败')
     tableRef.value?.clearSelection()
-  } else {
-    // 全选 = 选中当前页所有顶层节点（子节点由后端级联处理）
-    tableFiles.value.forEach(r => tableRef.value?.toggleRowSelection(r, true))
-  }
+    selectedRows.value = []
+    await refresh()
+    userStore.loadProfile().catch(() => {})
+  } finally { deleting.value = false }
 }
 
 // 过滤出「顶层选中节点」：父节点也在选中集合时，子节点会随父级联，避免重复请求

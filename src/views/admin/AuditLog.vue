@@ -69,7 +69,7 @@ import { formatDate } from '@/utils/file'
 const logs = ref([])
 const total = ref(0)
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const loading = ref(false)
 const filters = ref({ username: '', action: '', dateRange: null })
 // 用户ID → 用户名映射（审计日志只带 userId，用用户列表补全显示）

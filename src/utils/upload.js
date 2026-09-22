@@ -16,12 +16,18 @@ import { cacheFile, removeCachedFile } from '@/utils/uploadFileStore'
 const PART_RETRY = 2
 
 export async function uploadFile(file, parentId, options = {}) {
-  const { onProgress = () => {}, onSnapshot = () => {}, signal } = options
+  const { onProgress = () => {}, onSnapshot = () => {}, signal, onBeforeInit } = options
   // 记录 ID 每次上传唯一：同文件重复上传（含秒传）在传输列表各留一条记录
   const recordId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 
   // 1. 计算文件 SHA-256（B 组内容寻址，必填）
   const sha256 = await computeSha256(file, p => onProgress({ phase: 'hash', percent: p }))
+
+  // 内容级去重：相同 sha256 已有进行中的上传则跳过，避免两个实例并发走到 MinIO 合并（一次性）导致后者「合并失败」
+  if (onBeforeInit) {
+    const proceed = await onBeforeInit(sha256)
+    if (!proceed) return { fileId: null, instant: false, skipped: true }
+  }
 
   // 2. 初始化上传（含秒传分支；后端对相同 sha256 幂等复用未完成 session，支持断点续传）
   const init = await uploadApi.init({ name: file.name, size: file.size, parentId, sha256 })

@@ -122,7 +122,7 @@ const sortedTasks = computed(() => {
 
 // ---- 分页：默认每页 20 条 ----
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const pagedTasks = computed(() => sortedTasks.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 watch(() => transfer.tasks.length, () => { // 任务数变化（清空/删除）时页码超界自动回退
   const maxPage = Math.max(1, Math.ceil(transfer.tasks.length / pageSize.value))
