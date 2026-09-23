@@ -3,27 +3,13 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 export default defineConfig({
+  base: './',
   plugins: [vue()],
   resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src')
-    }
-  },
-  css: {
-    preprocessorOptions: {
-      scss: { additionalData: '' }
-    }
+    alias: { '@': resolve(__dirname, 'src') }
   },
   server: {
     host: '0.0.0.0',
-    port: 3000,
-    open: true,
-    proxy: {
-      '/api': {
-        // target: 'http://192.168.9.160:3001',
-        target: 'http://112.4.135.254:9999',
-        changeOrigin: true
-      }
-    }
+    port: 3000
   }
 })

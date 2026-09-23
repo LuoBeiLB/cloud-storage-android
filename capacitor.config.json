@@ -1,0 +1,12 @@
+{
+  "appId": "com.cloudstorage.app",
+  "appName": "云盘",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

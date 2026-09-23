@@ -8,47 +8,56 @@ export const useFileStore = defineStore('file', () => {
   const breadcrumb = ref([{ id: 0, name: '全部文件' }])
   const currentParentId = ref(0)
   const total = ref(0)
+  const page = ref(1)
+  const pageSize = 20
   const loading = ref(false)
+  const finished = ref(false)
 
-  // 加载目录：后端返回 { total, list: FileNodeVO[], breadcrumb: [{id, name}] }
-  // 请求序列号：快速切换目录/分页时只采纳最新请求的结果，避免旧请求晚返回覆盖新数据
   let loadSeq = 0
-  async function loadDir(parentId = currentParentId.value, page = 1, size = 20, sort = null) {
+
+  // 进入/刷新目录：重置到第一页（reset=true），或追加下一页
+  async function loadDir(parentId, { reset = false, append = false } = {}) {
+    if (loading.value) return
+    if (reset) {
+      parentId = parentId ?? currentParentId.value
+      currentParentId.value = parentId
+      page.value = 1
+      finished.value = false
+    }
     const seq = ++loadSeq
     loading.value = true
-    currentParentId.value = parentId
     try {
-      const res = await fileApi.listDir({ parent: parentId, page, size, ...(sort ? { sort } : {}) })
+      const res = await fileApi.listDir({ parent: currentParentId.value, page: page.value, size: pageSize })
       if (seq !== loadSeq) return
-      files.value = (res.list || []).map(f => mapFileNode(f))
+      const rows = (res.list || []).map(f => mapFileNode(f))
+      if (append) files.value = files.value.concat(rows)
+      else files.value = rows
       total.value = res.total || 0
       breadcrumb.value = [{ id: 0, name: '全部文件' }, ...(res.breadcrumb || [])]
+      if (files.value.length >= total.value || rows.length === 0) finished.value = true
     } catch (e) {
-      // 拦截器已提示错误，保留旧数据
+      // 拦截器已提示
     } finally {
       if (seq === loadSeq) loading.value = false
     }
   }
 
-  // 新建文件夹（同级重名由后端自动改名）
-  function createFolder(name) {
-    return fileApi.mkdir({ parentId: currentParentId.value, name })
+  // 下拉刷新
+  function refresh() {
+    return loadDir(currentParentId.value, { reset: true })
   }
 
-  // 重命名
-  function rename(id, name) {
-    return fileApi.update(id, { name })
+  // 上拉加载更多
+  function loadMore() {
+    if (finished.value || loading.value) return Promise.resolve()
+    page.value += 1
+    return loadDir(currentParentId.value, { append: true })
   }
 
-  // 删除（默认进回收站）
-  function remove(id, force = 0) {
-    return fileApi.remove(id, force)
+  // 进入子目录
+  function enter(parentId) {
+    return loadDir(parentId, { reset: true })
   }
 
-  // 进入目录（面包屑跳转也走这里）
-  function navigateTo(parentId) {
-    return loadDir(parentId, 1)
-  }
-
-  return { files, breadcrumb, currentParentId, total, loading, loadDir, createFolder, rename, remove, navigateTo }
+  return { files, breadcrumb, currentParentId, total, page, pageSize, loading, finished, loadDir, refresh, loadMore, enter }
 })

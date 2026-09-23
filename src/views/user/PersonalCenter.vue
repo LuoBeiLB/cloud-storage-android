@@ -1,102 +1,99 @@
 <template>
-  <div class="cs-page">
-    <h2 class="page-title"><el-icon><User /></el-icon>个人中心</h2>
-    <div class="profile-grid">
-      <div class="cs-card quota-card">
-        <div class="quota-header">
-          <h3>存储空间</h3>
-          <el-tag :type="quotaPercent > 80 ? 'danger' : quotaPercent > 60 ? 'warning' : 'success'" size="small">{{ quotaPercent }}%</el-tag>
-        </div>
-        <div class="quota-visual">
-          <div class="quota-bar"><div class="quota-bar-fill" :style="{ width: quotaPercent + '%' }" :class="{ 'quota-danger': quotaPercent > 80 }"></div></div>
-          <div class="quota-detail"><span>已用 {{ formatSize(userStore.quota.used) }}</span><span>总计 {{ formatSize(userStore.quota.total) }}</span></div>
-        </div>
-        <div class="quota-stats">
-          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-primary)"><Document /></el-icon><div><div class="stat-num">{{ stats.totalFiles }}</div><div class="stat-label">文件数</div></div></div>
-          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-success)"><Folder /></el-icon><div><div class="stat-num">{{ stats.totalDirs }}</div><div class="stat-label">文件夹</div></div></div>
-          <div class="quota-stat-item"><el-icon :size="20" color="var(--cs-warning)"><Delete /></el-icon><div><div class="stat-num">{{ stats.recycleCount }}</div><div class="stat-label">回收站</div></div></div>
-        </div>
-      </div>
-      <div class="cs-card password-card">
-        <h3>修改密码</h3>
-        <el-form :model="pwdForm" label-width="80px" style="margin-top: 20px">
-          <el-form-item label="当前密码"><el-input v-model="pwdForm.oldPassword" type="password" show-password /></el-form-item>
-          <el-form-item label="新密码"><el-input v-model="pwdForm.newPassword" type="password" show-password /></el-form-item>
-          <el-form-item label="确认密码"><el-input v-model="pwdForm.confirmPassword" type="password" show-password /></el-form-item>
-          <el-form-item><el-button type="primary" :loading="changing" @click="handleChangePassword">确认修改</el-button></el-form-item>
-        </el-form>
-      </div>
-      <div class="cs-card info-card">
-        <h3>账户信息</h3>
-        <el-descriptions :column="1" border style="margin-top: 20px">
-          <el-descriptions-item label="用户名">{{ userStore.username }}</el-descriptions-item>
-          <el-descriptions-item label="角色"><el-tag :type="userStore.role === 'admin' ? 'danger' : ''">{{ userStore.role === 'admin' ? '管理员' : '普通用户' }}</el-tag></el-descriptions-item>
-          <el-descriptions-item label="用户ID">{{ userStore.userId || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="上次登录">--</el-descriptions-item>
-        </el-descriptions>
+  <div class="page">
+    <!-- 用户卡片 -->
+    <div class="profile-card">
+      <van-image round width="60" height="60" fit="cover" class="avatar">
+        <template #error><div class="avatar-fallback"><van-icon name="user-o" size="30" /></div></template>
+      </van-image>
+      <div class="uinfo">
+        <div class="uname">{{ userStore.username || '未登录' }}</div>
+        <div class="uid">ID: {{ userStore.userId || '--' }}</div>
       </div>
     </div>
+
+    <!-- 容量 -->
+    <van-cell-group inset class="group">
+      <van-cell title="存储空间">
+        <template #label>
+          <div class="quota-wrap">
+            <van-progress :percentage="quotaPercent" :color="quotaPercent > 85 ? '#ee0a24' : '#1989fa'" stroke-width="8" />
+            <div class="quota-text">{{ formatSize(userStore.quota.used) }} / {{ formatSize(userStore.quota.total) }}</div>
+          </div>
+        </template>
+      </van-cell>
+    </van-cell-group>
+
+    <!-- 设置 -->
+    <van-cell-group inset class="group">
+      <van-cell title="修改密码" is-link @click="showPwd = true" icon-name="lock" />
+      <van-cell title="退出登录" is-link @click="onLogout" icon-name="cross" />
+    </van-cell-group>
+
+    <p class="tip">退出登录后，本地登录状态将被清除</p>
+
+    <!-- 修改密码 -->
+    <van-dialog v-model:show="showPwd" title="修改密码" show-cancel-button :before-close="onChangePwd" class="pwd-dialog">
+      <van-field v-model="oldPwd" type="password" placeholder="当前密码" style="margin: 12px 16px 0;" />
+      <van-field v-model="newPwd" type="password" placeholder="新密码（至少6位）" style="margin: 8px 16px 0;" />
+      <van-field v-model="confirmPwd" type="password" placeholder="确认新密码" style="margin: 8px 16px 16px;" />
+    </van-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import { useUserStore } from '@/stores/user'
-import { statsApi, authApi } from '@/api'
 import { formatSize } from '@/utils/file'
 
+const router = useRouter()
 const userStore = useUserStore()
-const pwdForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
-const changing = ref(false)
-const stats = ref({ totalFiles: 0, totalDirs: 0, recycleCount: 0 })
 
-const quotaPercent = computed(() => userStore.quota.total > 0 ? Math.round(userStore.quota.used / userStore.quota.total * 100) : 0)
-
-onMounted(() => {
-  // 刷新配额（/auth/profile）
-  userStore.loadProfile().catch(() => {})
-  // 个人存储统计（/stats/overview）
-  statsApi.overview().then(s => {
-    stats.value = { totalFiles: s.totalFiles || 0, totalDirs: s.totalDirs || 0, recycleCount: s.recycleCount || 0 }
-  }).catch(() => {})
+const quotaPercent = computed(() => {
+  if (!userStore.quota.total) return 0
+  return Math.min(100, Math.round(userStore.quota.used / userStore.quota.total * 100))
 })
 
-async function handleChangePassword() {
-  if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword) { ElMessage.error('请填写当前密码和新密码'); return }
-  if (pwdForm.value.newPassword !== pwdForm.value.confirmPassword) { ElMessage.error('两次密码输入不一致'); return }
-  changing.value = true
-  try {
-    await authApi.changePassword({ oldPassword: pwdForm.value.oldPassword, newPassword: pwdForm.value.newPassword })
-    ElMessage.success('密码修改成功')
-    pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
-  } catch (e) {
-    // 错误提示由拦截器统一弹出
-  } finally {
-    changing.value = false
-  }
+onMounted(() => {
+  userStore.loadProfile().catch(() => {})
+})
+
+function onLogout() {
+  showConfirmDialog({ title: '退出登录？', message: '退出后需要重新输入账号密码。' })
+    .then(() => { userStore.logout(); router.replace('/login') })
+    .catch(() => {})
 }
+
+const showPwd = ref(false)
+const oldPwd = ref('')
+const newPwd = ref('')
+const confirmPwd = ref('')
+
+function onChangPwd(action) {
+  if (action !== 'confirm') { resetPwd(); return true }
+  if (!oldPwd.value) { showToast('请输入当前密码'); return false }
+  if (newPwd.value.length < 6) { showToast('新密码至少6位'); return false }
+  if (newPwd.value !== confirmPwd.value) { showToast('两次输入的新密码不一致'); return false }
+  return userStore.changePassword({ oldPassword: oldPwd.value, newPassword: newPwd.value })
+    .then(() => { showSuccessToast('密码修改成功'); resetPwd(); return true })
+    .catch(() => false)
+}
+function resetPwd() { oldPwd.value = ''; newPwd.value = ''; confirmPwd.value = '' }
 </script>
 
 <style scoped>
-.page-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--cs-text-primary); margin: 0 0 24px 0; }
-.profile-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
-.quota-card { grid-column: 1 / -1; padding: 24px; }
-.password-card, .info-card { padding: 24px; }
-.password-card h3, .info-card h3, .quota-card h3 { font-size: 16px; font-weight: 600; color: var(--cs-text-primary); margin: 0; }
-.quota-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.quota-bar { height: 12px; background: var(--cs-bg-hover); border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
-.quota-bar-fill { height: 100%; background: linear-gradient(90deg, var(--cs-primary), var(--cs-primary-light)); border-radius: 6px; transition: width 0.3s ease; }
-.quota-bar-fill.quota-danger { background: linear-gradient(90deg, var(--cs-danger), #ff7875); }
-.quota-detail { display: flex; justify-content: space-between; font-size: 14px; color: var(--cs-text-secondary); margin-bottom: 24px; }
-.quota-stats { display: flex; gap: 32px; padding-top: 20px; border-top: 1px solid var(--cs-border); }
-.quota-stat-item { display: flex; align-items: center; gap: 12px; }
-.stat-num { font-size: 20px; font-weight: 600; color: var(--cs-text-primary); }
-.stat-label { font-size: 12px; color: var(--cs-text-tertiary); }
-@media (max-width: 768px) {
-  .profile-grid { grid-template-columns: 1fr; gap: 16px; }
-  .quota-stats { gap: 16px; flex-wrap: wrap; }
-  .quota-card, .password-card, .info-card { padding: 16px; }
-  .quota-stat-item { gap: 8px; }
+.page { height: 100%; overflow-y: auto; }
+.profile-card {
+  margin: calc(14px + var(--safe-top)) 12px 0; padding: 18px; border-radius: 14px;
+  background: linear-gradient(135deg, #3ba0ff, #1989fa);
+  display: flex; align-items: center; gap: 14px; color: #fff;
 }
+.avatar-fallback { width: 100%; height: 100%; background: #e6f4ff; color: #1989fa; display: flex; align-items: center; justify-content: center; }
+.uname { font-size: 19px; font-weight: 600; }
+.uid { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+.group { margin-top: 14px; }
+.quota-wrap { margin-top: 10px; }
+.quota-text { font-size: 12px; color: #969799; margin-top: 8px; }
+.tip { text-align: center; font-size: 12px; color: #c8c9cc; margin: 18px 0; }
 </style>

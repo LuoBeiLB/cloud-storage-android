@@ -1,237 +1,101 @@
 <template>
-  <div class="cs-page">
-    <!-- 页头 -->
-    <div class="transfer-head">
-      <div class="transfer-head__left">
-        <h2 class="page-title"><el-icon><Upload /></el-icon>传输任务</h2>
-        <p class="transfer-subtitle">上传记录实时展示，未完成任务可暂停、续传或放弃</p>
+  <div class="page">
+    <header class="app-header">
+      <div class="page-title">
+        传输任务
+        <span v-if="doneList.length" class="clear-done" @click="transfer.clearDone()">清空已完成</span>
       </div>
-      <el-button v-if="doneCount > 0" text size="small" @click="transfer.clearDone()">
-        <el-icon><Delete /></el-icon><span>清空已完成（{{ doneCount }}）</span>
-      </el-button>
-    </div>
+    </header>
 
-    <!-- 任务列表（整体一个卡片，行式布局） -->
-    <div class="cs-card task-panel">
-      <!-- 空状态 -->
-      <div v-if="!transfer.tasks.length" class="panel-empty">
-        <el-empty description="当前没有传输任务" :image-size="120" />
-        <p class="empty-tip">上传文件后，任务将显示在这里，支持断点续传</p>
-      </div>
-
-      <!-- 任务行 -->
-      <div v-for="t in pagedTasks" v-else :key="t.id" class="task-row">
-        <div class="task-row__icon" :style="iconStyle(t)">
-          <el-icon :size="20"><component :is="getIconName(t)" /></el-icon>
+    <div class="list">
+      <div v-for="t in sortedTasks" :key="t.id" class="task-card">
+        <div class="task-head">
+          <van-icon :name="state === 'done' ? 'passed' : 'underway-o'" :color="iconColor(t)" size="20" />
+          <span class="task-name">{{ t.name }}</span>
         </div>
 
-        <div class="task-row__main">
-          <div class="task-row__title">
-            <span class="task-row__name" :title="t.name">{{ t.name }}</span>
-            <span class="task-row__size">{{ formatSize(t.size || 0) }}</span>
-          </div>
-
-          <!-- 传输中 / 已暂停：进度条 -->
-          <div v-if="stateOf(t) === 'uploading' || stateOf(t) === 'paused'" class="task-row__progress">
-            <span class="progress-track">
-              <span class="progress-fill" :class="{ 'is-paused': stateOf(t) === 'paused' }" :style="{ width: transfer.percent(t) + '%' }"></span>
-            </span>
-            <span class="progress-pct" :class="{ 'is-paused': stateOf(t) === 'paused' }">{{ transfer.percent(t) }}%</span>
-            <span v-if="stateOf(t) === 'paused'" class="progress-hint">已暂停</span>
-          </div>
-
-          <!-- 等待上传 -->
-          <div v-else-if="stateOf(t) === 'waiting'" class="task-row__status is-waiting">
-            <el-icon><Clock /></el-icon><span>{{ transfer.hashing[t.id] != null ? '正在校验指纹 ' + transfer.hashing[t.id] + '%' : '等待上传' }}</span>
-          </div>
-
-          <!-- 已完成 -->
-          <div v-else class="task-row__status is-done">
-            <el-icon><CircleCheckFilled /></el-icon><span>已完成</span>
-          </div>
+        <div class="task-progress">
+          <van-progress
+            :percentage="transfer.percent(t)"
+            :color="progressColor(t)"
+            :show-pivot="stateOf(t) === 'uploading' || stateOf(t) === 'waiting'"
+            pivot-text="{{ transfer.percent(t) }}%"
+            stroke-width="6"
+          />
         </div>
 
-        <div class="task-row__ops">
-          <el-tooltip v-if="stateOf(t) === 'uploading'" content="暂停" placement="top">
-            <button class="op-btn" @click="transfer.pauseTask(t)"><el-icon><VideoPause /></el-icon></button>
-          </el-tooltip>
-          <template v-else-if="stateOf(t) === 'paused' || (stateOf(t) === 'waiting' && !transfer.resuming[t.id])">
-            <el-tooltip content="继续上传" placement="top">
-              <button class="op-btn is-primary" @click="transfer.resumeTask(t)"><el-icon><VideoPlay /></el-icon></button>
-            </el-tooltip>
-            <el-tooltip content="放弃任务" placement="top">
-              <button class="op-btn" @click="transfer.discardTask(t)"><el-icon><Close /></el-icon></button>
-            </el-tooltip>
+        <div class="task-status">
+          <span :class="['state', stateOf(t)]">{{ statusText(t) }}</span>
+        </div>
+
+        <div class="task-actions">
+          <template v-if="stateOf(t) === 'done'">
+            <van-button size="small" plain @click="transfer.removeRecord(t)">移除记录</van-button>
           </template>
-          <el-tooltip v-else-if="stateOf(t) === 'waiting'" content="放弃任务" placement="top">
-            <button class="op-btn" @click="transfer.discardTask(t)"><el-icon><Close /></el-icon></button>
-          </el-tooltip>
-          <el-tooltip v-else content="移除记录" placement="top">
-            <button class="op-btn" @click="transfer.removeRecord(t)"><el-icon><Close /></el-icon></button>
-          </el-tooltip>
+          <template v-else-if="stateOf(t) === 'uploading' || stateOf(t) === 'waiting'">
+            <van-button size="small" type="warning" plain @click="transfer.pauseTask(t)">暂停</van-button>
+            <van-button size="small" type="danger" plain @click="transfer.discardTask(t)">放弃</van-button>
+          </template>
+          <template v-else>
+            <van-button size="small" type="primary" @click="transfer.resumeTask(t)">继续</van-button>
+            <van-button size="small" type="danger" plain @click="transfer.discardTask(t)">放弃</van-button>
+          </template>
         </div>
       </div>
-    </div>
 
-    <!-- 分页：默认每页 20 条 -->
-    <el-pagination
-      v-if="transfer.tasks.length > 0"
-      v-model:current-page="page"
-      v-model:page-size="pageSize"
-      :total="transfer.tasks.length"
-      :page-sizes="[10, 20, 50, 100]"
-      layout="total, sizes, prev, pager, next"
-      class="task-pagination"
-    />
+      <van-empty v-if="transfer.tasks.length === 0" description="暂无传输任务" />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
-import { formatSize, extToType } from '@/utils/file'
+import { computed } from 'vue'
 import { useTransferStore } from '@/stores/transfer'
 
 const transfer = useTransferStore()
+const stateOf = transfer.stateOf
 
-onMounted(() => transfer.refresh())
-
-const stateOf = t => transfer.stateOf(t)
-
-// ---- 文件图标（与文件列表一致：类型色浅底 + 彩色图标）----
-const iconMap = { pdf: 'Document', image: 'Picture', word: 'Document', excel: 'Grid', ppt: 'Monitor', video: 'VideoCamera', audio: 'Headset', archive: 'Files', text: 'Notebook' }
-const iconColorMap = { pdf: '#ff4d4f', image: '#52c41a', word: '#1677ff', excel: '#52c41a', ppt: '#fa8c16', video: '#722ed1', audio: '#13c2c2', archive: '#8c8c8c', text: '#595959' }
-function getIconName(t) { return iconMap[extToType(t.name)] || 'Document' }
-function iconStyle(t) {
-  const c = iconColorMap[extToType(t.name)] || '#8c8c8c'
-  return { color: c, background: c + '1a' }
-}
-
-// ---- 统计与排序：进行中在前，已完成在后 ----
-const doneCount = computed(() => transfer.tasks.filter(t => transfer.stateOf(t) === 'done').length)
-const ORDER = { uploading: 0, waiting: 1, paused: 2, done: 3 }
 const sortedTasks = computed(() => {
-  return [...transfer.tasks].sort((a, b) => {
-    const oa = ORDER[transfer.stateOf(a)] ?? 9
-    const ob = ORDER[transfer.stateOf(b)] ?? 9
-    if (oa !== ob) return oa - ob
-    // 未完成任务按创建时间锁定位置（进度刷新不再换位）；已完成按完成时间，刚完成的在前
-    const key = t => t.status === 'done' ? (t.updatedAt || 0) : (t.createdAt || t.updatedAt || 0)
-    return key(b) - key(a)
-  })
+  const rank = { waiting: 0, uploading: 1, paused: 2, done: 3 }
+  return [...transfer.tasks].sort((a, b) => (rank[stateOf(a)] ?? 9) - (rank[stateOf(b)] ?? 9))
 })
+const doneList = computed(() => transfer.tasks.filter(t => stateOf(t) === 'done'))
 
-// ---- 分页：默认每页 20 条 ----
-const page = ref(1)
-const pageSize = ref(10)
-const pagedTasks = computed(() => sortedTasks.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
-watch(() => transfer.tasks.length, () => { // 任务数变化（清空/删除）时页码超界自动回退
-  const maxPage = Math.max(1, Math.ceil(transfer.tasks.length / pageSize.value))
-  if (page.value > maxPage) page.value = maxPage
-})
+function statusText(t) {
+  const s = stateOf(t)
+  if (s === 'done') return '已完成'
+  if (s === 'uploading') return '上传中 ' + (t.doneParts || 0) + '/' + (t.totalParts || 0)
+  if (s === 'waiting') return transfer.hashing[t.id] != null ? '正在校验指纹 ' + transfer.hashing[t.id] + '%' : '准备中…'
+  return '已暂停 ' + (t.doneParts || 0) + '/' + (t.totalParts || 0)
+}
+function iconColor(t) {
+  const s = stateOf(t)
+  if (s === 'done') return '#07c160'
+  if (s === 'paused') return '#c8c9cc'
+  return '#1989fa'
+}
+function progressColor(t) {
+  const s = stateOf(t)
+  if (s === 'done') return '#07c160'
+  if (s === 'paused') return '#c8c9cc'
+  return '#1989fa'
+}
 </script>
 
 <style scoped>
-/* ===== 页头 ===== */
-.transfer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
-.transfer-subtitle { font-size: 13px; color: var(--cs-text-secondary); margin: 6px 0 0 28px; }
-
-/* ===== 任务面板（整体一个卡片）===== */
-.task-panel { overflow: hidden; }
-
-/* 空状态 */
-.panel-empty { padding: 48px 24px 40px; text-align: center; }
-.empty-tip { font-size: 13px; color: var(--cs-text-tertiary); margin: 4px 0 20px; }
-
-/* ===== 分页 ===== */
-.task-pagination { margin-top: 14px; justify-content: flex-end; }
-
-/* ===== 任务行 ===== */
-.task-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 20px;
-  transition: background 0.2s ease;
-  animation: rowIn 0.3s ease;
+.page { display: flex; flex-direction: column; height: 100%; }
+.page-title .clear-done {
+  position: absolute; right: 14px; font-size: 13px; color: #1989fa; font-weight: 400;
 }
-.task-row + .task-row { border-top: 1px solid var(--cs-border-light); }
-.task-row:hover { background: var(--cs-bg-hover); }
-@keyframes rowIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-
-.task-row__icon {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
+.list { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.task-card {
+  background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
 }
-
-.task-row__main { flex: 1; min-width: 0; }
-.task-row__title { display: flex; align-items: center; gap: 10px; }
-.task-row__name {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--cs-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.task-row__size { flex-shrink: 0; font-size: 12px; color: var(--cs-text-tertiary); }
-
-/* ===== 进度条 ===== */
-.task-row__progress { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
-.progress-track { display: block; flex: 1; height: 5px; background: var(--cs-bg-hover); border-radius: 100px; overflow: hidden; }
-.progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: 100px;
-  background: linear-gradient(90deg, var(--cs-primary), var(--cs-primary-light));
-  background-size: 200% 100%;
-  animation: flow 1.4s linear infinite;
-  transition: width 0.25s ease;
-}
-.progress-fill.is-paused { background: var(--cs-warning); background-size: 100% 100%; animation: none; }
-@keyframes flow { from { background-position: 0% 0; } to { background-position: -200% 0; } }
-.progress-pct { flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--cs-primary); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
-.progress-pct.is-paused { color: var(--cs-warning); }
-.progress-hint { flex-shrink: 0; font-size: 12px; color: var(--cs-warning); }
-
-/* ===== 状态文字 ===== */
-.task-row__status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; margin-top: 7px; }
-.task-row__status.is-waiting { color: var(--cs-text-tertiary); }
-.task-row__status.is-done { color: var(--cs-success); }
-
-/* ===== 操作按钮 ===== */
-.task-row__ops { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.op-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--cs-text-tertiary);
-  cursor: pointer;
-  font-size: 15px;
-  transition: all 0.2s ease;
-}
-.op-btn:hover { background: var(--cs-bg-hover); color: var(--cs-text-primary); transform: translateY(-1px); }
-.op-btn.is-primary { color: var(--cs-primary); }
-.op-btn.is-primary:hover { background: var(--cs-primary-lighter); color: var(--cs-primary); }
-/* 放弃/移除 hover 变红 */
-.task-row__ops .op-btn:not(.is-primary):hover { color: var(--cs-danger); background: rgba(255, 77, 79, 0.08); }
-
-/* ===== 响应式 ===== */
-@media (max-width: 768px) {
-  .transfer-subtitle { margin-left: 0; }
-  .task-row { flex-wrap: wrap; padding: 12px 14px; gap: 10px; }
-  .task-row__main { flex: 1 1 calc(100% - 54px); }
-  .task-row__ops { width: 100%; justify-content: flex-end; }
-}
+.task-head { display: flex; align-items: center; gap: 8px; }
+.task-name { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-progress { margin: 12px 0 6px; }
+.task-status .state { font-size: 12px; color: #969799; }
+.task-status .state.uploading, .task-status .state.waiting { color: #1989fa; }
+.task-status .state.done { color: #07c160; }
+.task-actions { display: flex; gap: 10px; margin-top: 12px; }
 </style>
