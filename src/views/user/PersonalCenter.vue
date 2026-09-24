@@ -2,9 +2,7 @@
   <div class="page">
     <!-- 用户卡片 -->
     <div class="profile-card">
-      <van-image round width="60" height="60" fit="cover" class="avatar">
-        <template #error><div class="avatar-fallback"><van-icon name="user-o" size="30" /></div></template>
-      </van-image>
+      <div class="avatar-letter">{{ avatarLetter }}</div>
       <div class="uinfo">
         <div class="uname">{{ userStore.username || '未登录' }}</div>
         <div class="uid">ID: {{ userStore.userId || '--' }}</div>
@@ -49,6 +47,7 @@ import { formatSize } from '@/utils/file'
 
 const router = useRouter()
 const userStore = useUserStore()
+const avatarLetter = computed(() => (userStore.username || '云').slice(0, 1).toUpperCase())
 
 const quotaPercent = computed(() => {
   if (!userStore.quota.total) return 0
@@ -89,7 +88,7 @@ function resetPwd() { oldPwd.value = ''; newPwd.value = ''; confirmPwd.value = '
   background: linear-gradient(135deg, #3ba0ff, #1989fa);
   display: flex; align-items: center; gap: 14px; color: #fff;
 }
-.avatar-fallback { width: 100%; height: 100%; background: #e6f4ff; color: #1989fa; display: flex; align-items: center; justify-content: center; }
+.avatar-letter { width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,.25); border: 2px solid rgba(255,255,255,.7); color: #fff; font-size: 26px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .uname { font-size: 19px; font-weight: 600; }
 .uid { font-size: 12px; opacity: 0.85; margin-top: 4px; }
 .group { margin-top: 14px; }

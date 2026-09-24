@@ -19,7 +19,7 @@
             :percentage="transfer.percent(t)"
             :color="progressColor(t)"
             :show-pivot="stateOf(t) === 'uploading' || stateOf(t) === 'waiting'"
-            pivot-text="{{ transfer.percent(t) }}%"
+            :pivot-text="transfer.percent(t) + '%'"
             stroke-width="6"
           />
         </div>

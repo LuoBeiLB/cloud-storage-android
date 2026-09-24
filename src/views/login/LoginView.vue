@@ -1,7 +1,7 @@
 <template>
   <div class="login-page">
     <div class="login-hero">
-      <div class="logo"><van-icon name="cloud-o" /></div>
+      <div class="logo"><van-icon name="cluster" /></div>
       <h1 class="brand">我的云盘</h1>
       <p class="slogan">安全存储 · 随时访问</p>
     </div>
