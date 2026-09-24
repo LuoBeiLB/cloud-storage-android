@@ -140,11 +140,14 @@ const reqPage = ref(1)
 const listLoading = ref(false)
 const listFinished = ref(false)
 
-async function loadRequests() {
+async function loadRequests(force = false) {
+  if (!force && listLoading.value) return // 防 van-list @load 与手动触发并发
+  listLoading.value = true
   try {
     const res = await billingApi.myRequests({ page: reqPage.value, size: 20 })
     const rows = res.records || res.list || []
-    requests.value = requests.value.concat(rows)
+    // 第一页整体替换，后续页才追加，避免重复
+    requests.value = reqPage.value === 1 ? rows : requests.value.concat(rows)
     const total = res.total || 0
     if (rows.length === 0 || requests.value.length >= total) listFinished.value = true
     else reqPage.value += 1
@@ -154,8 +157,7 @@ function refreshRequests() {
   requests.value = []
   reqPage.value = 1
   listFinished.value = false
-  listLoading.value = true
-  loadRequests()
+  loadRequests(true)
 }
 
 // ===== 工具 =====
@@ -177,8 +179,7 @@ onMounted(async () => {
     quota.value = q
     priceCents.value = c.pricePerGbMonthCents || 0
   } catch (e) { /* 拦截器已提示 */ }
-  listLoading.value = true
-  loadRequests()
+  // 申请记录由 van-list 的 @load 自动发起第一页，无需手动加载
 })
 </script>
 

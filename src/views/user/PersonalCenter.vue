@@ -19,7 +19,7 @@
         <div class="qc-btn">申请增额</div>
       </div>
       <van-progress :percentage="quotaPercent" :color="quotaBarColor" stroke-width="8" track-color="rgba(255,255,255,.25)" />
-      <div class="qc-nums">{{ formatSize(userStore.quota.used) }} / {{ formatSize(userStore.quota.total) }}</div>
+      <div class="qc-nums">{{ formatSize(usedBytes) }} / {{ formatSize(totalBytes) }}</div>
       <div v-if="extraText" class="qc-extra">{{ extraText }}</div>
     </div>
 
@@ -52,9 +52,15 @@ const router = useRouter()
 const userStore = useUserStore()
 const avatarLetter = computed(() => (userStore.username || '云').slice(0, 1).toUpperCase())
 
+// 总量 = 免费 + 已批增额（以 /billing/quota 为准），billing 未返回时回退登录信息里的免费额度
+const totalBytes = computed(() => {
+  if (billing.value) return (billing.value.freeBytes || 0) + (billing.value.extraBytes || 0)
+  return userStore.quota.total || 0
+})
+const usedBytes = computed(() => billing.value ? (billing.value.usedBytes || 0) : (userStore.quota.used || 0))
 const quotaPercent = computed(() => {
-  if (!userStore.quota.total) return 0
-  return Math.min(100, Math.round(userStore.quota.used / userStore.quota.total * 100))
+  if (!totalBytes.value) return 0
+  return Math.min(100, Math.round(usedBytes.value / totalBytes.value * 100))
 })
 // 用量分档配色：蓝卡上正常用白色，>70% 转黄，>85% 转红
 const quotaBarColor = computed(() => {
