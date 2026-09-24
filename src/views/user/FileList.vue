@@ -23,7 +23,7 @@
     <!-- 列表 -->
     <van-pull-refresh v-model="refreshing" @refresh="onRefresh" class="list-scroll">
       <van-list
-        v-model:loading="fileStore.loading"
+        :loading="fileStore.loading"
         :finished="fileStore.finished"
         :finished-text="refreshing ? '' : '没有更多了'"
         @load="onLoad"
@@ -60,6 +60,7 @@
         </div>
 
         <van-empty v-if="fileStore.finished && orderedFiles.length === 0 && !fileStore.loading" description="这个文件夹还是空的" />
+        <div class="bottom-spacer"></div>
       </van-list>
     </van-pull-refresh>
 
@@ -425,7 +426,7 @@ function doMove(targetId) {
 </script>
 
 <style scoped>
-.file-page { display: flex; flex-direction: column; height: 100%; }
+.file-page { display: flex; flex-direction: column; height: 100%; background: #fff; }
 .topbar {
   height: 46px; display: flex; align-items: center; padding: 0 14px; gap: 10px;
 }
@@ -435,7 +436,7 @@ function doMove(targetId) {
 .crumb { color: #1989fa; }
 .sep { color: #c8c9cc; margin: 0 4px; }
 .add-icon { font-size: 22px; color: #1989fa; flex-shrink: 0; }
-.list-scroll { flex: 1; overflow-y: auto; }
+.list-scroll { flex: 1; overflow-y: auto; padding-bottom: calc(84px + env(safe-area-inset-bottom)); background: #fff; }
 .file-item {
   display: flex; align-items: center; padding: 12px 16px; background: #fff;
   border-bottom: 1px solid #f2f3f5; gap: 12px;
@@ -464,7 +465,9 @@ function doMove(targetId) {
 .sel-all { font-size: 14px; color: #1989fa; padding: 6px 4px; }
 .sel-check { margin-right: 4px; }
 .file-item.selected { background: #e8f3ff; }
-.batch-bar { position: sticky; bottom: 0; background: #fff; padding: 10px 16px; box-shadow: 0 -2px 8px rgba(0,0,0,.06); }
+.batch-bar { position: fixed; left: 14px; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom)); background: #fff; padding: 12px 16px; border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.10); z-index: 99; }
 
 .file-item { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+
+.bottom-spacer { height: calc(80px + env(safe-area-inset-bottom)); flex-shrink: 0; }
 </style>

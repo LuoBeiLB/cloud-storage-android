@@ -14,6 +14,7 @@ const routes = [
       { path: 'profile', name: 'Profile', component: () => import('@/views/user/PersonalCenter.vue'), meta: { title: '我的', tab: 3 } }
     ]
   },
+  { path: '/billing', name: 'Billing', component: () => import('@/views/user/Billing.vue'), meta: { title: '存储增额' } },
   { path: '/:pathMatch(.*)*', redirect: '/files' }
 ]
 

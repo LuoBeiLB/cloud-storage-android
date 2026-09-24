@@ -43,7 +43,7 @@ const go = to => { if (route.path !== to) router.push(to) }
 
 <style scoped>
 .app-shell { display: flex; flex-direction: column; height: 100%; }
-.page-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 80px; }
+.page-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* 切换动画：淡入 + 轻微上移 */
 .tab-fade-enter-active,

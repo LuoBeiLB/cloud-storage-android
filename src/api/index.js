@@ -79,3 +79,11 @@ export const uploadApi = {
   getDownloadUrl: fileId => request.get(`/files/${fileId}/download`),
   getPreviewUrl: fileId => request.get(`/files/${fileId}/download`, { params: { inline: true } })
 }
+
+// 计费（D组 cloud-billing）
+export const billingApi = {
+  config: () => request.get('/billing/config'),                    // { freeBytes, pricePerGbMonthCents, note }
+  quota: () => request.get('/billing/quota'),                      // { freeBytes, extraBytes, extraExpireAt, usedBytes, blocked }
+  createRequest: data => request.post('/billing/increase-requests', data), // { gbCount, remark }
+  myRequests: params => request.get('/billing/increase-requests', { params }) // 分页 RequestView
+}

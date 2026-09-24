@@ -6,7 +6,7 @@
 
     <van-pull-refresh v-model="refreshing" @refresh="onRefresh" class="list">
       <van-list
-        v-model:loading="loading"
+        :loading="loading"
         :finished="finished"
         :finished-text="refreshing ? '' : '没有更多了'"
         @load="load"
@@ -32,6 +32,7 @@
         </div>
 
         <van-empty v-if="finished && rows.length === 0" description="回收站是空的" />
+        <div class="bottom-spacer"></div>
       </van-list>
     </van-pull-refresh>
   </div>
@@ -128,11 +129,13 @@ function shortDate(iso) {
 
 <style scoped>
 .page { display: flex; flex-direction: column; height: 100%; }
-.list { flex: 1; overflow-y: auto; }
+.list { flex: 1; overflow-y: auto; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 .rb-card { padding: 12px 16px; border-bottom: 1px solid #f2f3f5; }
 .rb-main { display: flex; align-items: center; gap: 12px; }
 .rb-meta { flex: 1; min-width: 0; }
 .rb-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rb-sub { font-size: 12px; color: #969799; margin-top: 3px; }
 .rb-ops { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+
+.bottom-spacer { height: calc(80px + env(safe-area-inset-bottom)); flex-shrink: 0; }
 </style>

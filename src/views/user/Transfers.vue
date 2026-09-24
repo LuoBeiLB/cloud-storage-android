@@ -83,7 +83,7 @@ function progressColor(t) {
 </script>
 
 <style scoped>
-.page { display: flex; flex-direction: column; height: 100%; }
+.page { display: flex; flex-direction: column; height: 100%; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 .page-title .clear-done {
   position: absolute; right: 14px; font-size: 13px; color: #1989fa; font-weight: 400;
 }
