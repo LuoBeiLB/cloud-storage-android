@@ -87,3 +87,9 @@ export const billingApi = {
   createRequest: data => request.post('/billing/increase-requests', data), // { gbCount, remark }
   myRequests: params => request.get('/billing/increase-requests', { params }) // 分页 RequestView
 }
+
+// 应用更新（App 推送更新）
+export const updateApi = {
+  // 检查更新：silent 静默失败不弹错误提示 → { hasUpdate, versionCode, versionName, apkUrl, fileSize, fileHash, forceUpdate, updateNotes }
+  checkUpdate: params => request.get('/app/check-update', { params, silent: true })
+}

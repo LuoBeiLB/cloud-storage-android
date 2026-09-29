@@ -5,7 +5,7 @@ import { App } from '@capacitor/app'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Network } from '@capacitor/network'
 import { showDialog, showToast, showLoadingToast, closeToast } from 'vant'
-import { SERVER_ORIGIN } from '@/config'
+import { updateApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 
 const AppUpdate = registerPlugin('AppUpdate')
@@ -25,10 +25,10 @@ export async function checkAppUpdate() {
   checking = true
   try {
     const info = await App.getInfo() // { build: "1", version: "1.0" }
-    const url = `${SERVER_ORIGIN}/api/app/check-update?platform=android&versionCode=${info.build}&userId=${userStore.userId || 0}`
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${userStore.token}` } })
-    if (!resp.ok) return
-    const data = await resp.json()
+    // 走统一 api 层：Result 外壳由响应拦截器解包；silent 后台静默失败不打扰用户
+    const data = await updateApi.checkUpdate({
+      platform: 'android', versionCode: info.build, userId: userStore.userId || 0
+    })
     if (!data || !data.hasUpdate || !data.apkUrl) return
     await promptUpdate(data)
   } catch (e) {

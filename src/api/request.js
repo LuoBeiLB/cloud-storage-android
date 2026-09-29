@@ -23,7 +23,7 @@ request.interceptors.response.use(
       redirectToLogin()
       return Promise.reject(new Error(message || '登录已过期'))
     }
-    showToast(message || '请求失败')
+    if (!response.config?.silent) showToast(message || '请求失败')
     return Promise.reject(new Error(message || '请求失败'))
   },
   error => {
@@ -49,7 +49,7 @@ request.interceptors.response.use(
       redirectToLogin()
       return Promise.reject(error)
     }
-    showToast(error.response?.data?.message || '网络异常，请稍后重试')
+    if (!error.config?.silent) showToast(error.response?.data?.message || '网络异常，请稍后重试')
     return Promise.reject(error)
   }
 )
