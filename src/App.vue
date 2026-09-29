@@ -7,6 +7,7 @@ import { onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App } from '@capacitor/app'
 import { dispatchBack } from '@/utils/back'
+import { initAppUpdate } from '@/utils/appUpdate'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,4 +26,7 @@ onMounted(async () => {
   })
 })
 onUnmounted(() => { listener && listener.remove() })
+
+// 应用内更新：启动检查 + 回前台清理更新包
+initAppUpdate()
 </script>
